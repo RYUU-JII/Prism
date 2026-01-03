@@ -1,0 +1,100 @@
+#prism-orb {
+  position: fixed;
+  right: 24px;
+  top: 50%;
+  width: 58px;
+  height: 58px;
+  border: 0;
+  padding: 0;
+  border-radius: 50%;
+  transform: translateY(-50%) scale(0.75);
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.88);
+  background: radial-gradient(circle at 28% 28%, rgba(255, 255, 255, 0.6), rgba(20, 20, 30, 0.65));
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.35), 0 0 24px rgba(80, 160, 255, 0.3);
+  backdrop-filter: blur(10px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  z-index: 2147483647;
+}
+
+#prism-orb::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 180deg,
+    rgba(255, 79, 129, 0.8),
+    rgba(255, 181, 77, 0.85),
+    rgba(255, 255, 120, 0.8),
+    rgba(90, 218, 144, 0.75),
+    rgba(84, 160, 255, 0.85),
+    rgba(171, 112, 255, 0.85),
+    rgba(255, 79, 129, 0.8)
+  );
+  filter: blur(8px);
+  opacity: 0.85;
+  animation: prism-spin 4s linear infinite;
+}
+
+#prism-orb::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0));
+  mix-blend-mode: screen;
+  opacity: 0.6;
+}
+
+#prism-orb span {
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.45);
+}
+
+#prism-orb.prism-orb--active {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) scale(1);
+  animation: prism-pulse 2.6s ease-in-out infinite;
+}
+
+#prism-orb.prism-orb--active::before {
+  animation-play-state: running;
+}
+
+@keyframes prism-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes prism-pulse {
+  0%,
+  100% {
+    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.35), 0 0 24px rgba(80, 160, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.4), 0 0 40px rgba(255, 135, 80, 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #prism-orb,
+  #prism-orb::before {
+    animation: none;
+    transition: none;
+  }
+}
