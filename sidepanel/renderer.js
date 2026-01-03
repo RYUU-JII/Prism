@@ -133,16 +133,25 @@ if (targetTabId) {
 }
 
 function loadScriptOnce(src, globalName) {
-  if (globalName && window[globalName]) return Promise.resolve();
+  if (globalName && window[globalName]) return Promise.resolve(window[globalName]);
   if (scriptLoadCache.has(src)) return scriptLoadCache.get(src);
+
   const promise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = chrome.runtime.getURL(src);
+    
+    // chrome.runtime.getURL을 사용하여 익스텐션 내 절대 주소 확보
+    // src가 "vendor/..." 이라면 알아서 chrome-extension://[ID]/sidepanel/vendor/... 로 매핑됩니다.
+    script.src = chrome.runtime.getURL(src); 
     script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    
+    script.onload = () => resolve(globalName ? window[globalName] : true);
+    script.onerror = () => {
+      scriptLoadCache.delete(src); // 실패 시 캐시 삭제 (재시도 가능하게)
+      reject(new Error(`Failed to load ${src}`));
+    };
     document.head.appendChild(script);
   });
+
   scriptLoadCache.set(src, promise);
   return promise;
 }
@@ -170,24 +179,67 @@ function getCodeMirrorBundle() {
 
 async function ensureExpertEditor() {
   if (editorView || !expertEditorMount) return;
-  await loadScriptOnce("sidepanel/vendor/codemirror-bundle.js", "CodeMirrorBundle");
-  const CM = getCodeMirrorBundle();
-  if (!CM?.EditorView) {
-    console.error("[Prism] CodeMirror bundle failed to load or export EditorView.");
-    return;
+
+  // 1. 번들이 실행될 때 참조할 전역 객체를 미리 생성 (ReferenceError 방지)
+  window.codemirror = window.codemirror || {};
+
+  try {
+    // 2. 스크립트 로드
+    await loadScriptOnce("sidepanel/vendor/codemirror-bundle.js", "CodeMirrorBundle");
+
+    // 3. 번들이 'codemirror' 객체에 기능을 채웠다면, 이를 'CodeMirrorBundle'로 연결
+    if (window.codemirror && (window.codemirror.EditorView || window.codemirror.basicSetup)) {
+        window.CodeMirrorBundle = window.codemirror;
+    }
+
+    const CM = getCodeMirrorBundle();
+    
+    // 디버깅용: 실제로 무엇이 로드되었는지 콘솔에서 확인 가능합니다.
+    console.log("[Prism] CodeMirror Bundle Object:", CM);
+
+    if (!CM || !CM.EditorView) {
+      throw new Error("EditorView not found in bundle. Check if the bundle exports 'codemirror' or 'CodeMirrorBundle'.");
+    }
+
+    // 4. 에디터 생성 로직 (기존과 동일)
+    const updateListener = CM.EditorView.updateListener.of((update) => {
+      if (update.docChanged && !editorApplyingRemote) {
+        const newCode = update.state.doc.toString();
+        // 샌드박스로 변경사항 전송
+        postToSandbox({ type: "PRISM_EXPERT_UPDATE", code: newCode });
+      }
+    });
+
+    editorView = new CM.EditorView({
+      state: CM.EditorState.create({
+        // [수정] 아래 line의 doc 부분에 "Hello" 또는 초기 코드를 넣습니다.
+        doc: latestPayload?.code || "", 
+        extensions: [
+          CM.basicSetup,
+          CM.html(),
+          updateListener,
+          // 에디터가 안 보일 때를 대비해 강제로 높이와 스타일 부여
+          CM.EditorView.theme({
+            "&": { 
+              height: "100%", 
+              backgroundColor: "#1e1e1e",
+              color: "#ffffff" 
+            },
+            ".cm-scroller": { overflow: "auto" },
+            ".cm-content": { 
+              fontFamily: "'Consolas', 'Monaco', monospace", 
+              fontSize: "14px",
+              padding: "10px 0"
+            }
+          })
+        ],
+      }),
+      parent: expertEditorMount,
+    });
+
+  } catch (err) {
+    console.error("[Prism] Expert Editor Init Error:", err);
   }
-
-  const updateListener = CM.EditorView.updateListener.of((update) => {
-    if (!update.docChanged || editorApplyingRemote) return;
-    const newCode = update.state.doc.toString();
-    renderPayload(newCode, detectKind(newCode), latestPayload?.url, latestPayload?.theme);
-  });
-
-  editorView = new CM.EditorView({
-    doc: latestPayload?.code || "",
-    extensions: [CM.basicSetup, CM.html(), updateListener],
-    parent: expertEditorMount
-  });
 }
 
 function setEditorContent(code) {

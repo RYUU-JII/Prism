@@ -391,3 +391,24 @@ body::after {
 #expert-editor-container .cm-scroller {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
+
+/* theme.css 에 추가 */
+
+#expert-editor-container.active {
+  height: 300px; /* 또는 60% */
+  display: flex; /* 내부 에디터를 꽉 채우기 위해 flex 권장 */
+  flex-direction: column;
+}
+
+#expert-editor {
+  flex: 1;      /* 남은 공간 모두 차지 */
+  width: 100%;
+  height: 100%;
+  min-height: 200px; /* 최소 높이 보장 */
+}
+
+/* CodeMirror 내부 클래스 강제 스타일링 */
+.cm-editor {
+  height: 100% !important;
+  width: 100% !important;
+}
