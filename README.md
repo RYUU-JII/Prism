@@ -24,7 +24,7 @@ Prism is designed to be compatible with a wide range of AI platforms. Please not
 6. Click **Load unpacked** and select the unzipped folder.
 
 ### For Developers
-1. Clone this repository: `git clone https://github.com/YOUR_USERNAME/Prism.git`
+1. Clone this repository: `git clone https://github.com/RYUU-JII/Prism.git`
 2. Open `chrome://extensions`.
 3. Enable **Developer mode**.
 4. Click **Load unpacked** and select the `Prism` folder.
