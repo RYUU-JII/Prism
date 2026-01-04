@@ -1,6 +1,6 @@
 # Prism
 
-Prism is a Chrome Extension (Manifest V3) that renders copied AI-generated HTML/React code in a Side Panel for quick preview.
+Prism is a Chrome Extension (Manifest V3) that renders copied AI-generated HTML code in a Side Panel for quick preview.
 
 ## Features
 
@@ -24,7 +24,7 @@ Prism is a Chrome Extension (Manifest V3) that renders copied AI-generated HTML/
 
 ## Usage
 
-1. Copy an HTML/React snippet from an AI chat
+1. Copy an HTML snippet from an AI chat
 2. Click the Prism Orb to open the Side Panel and render
 3. Use the top-right actions:
    - **HTML**: save the last rendered HTML
