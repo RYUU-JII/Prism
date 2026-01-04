@@ -1,24 +1,37 @@
-// 탭별 최신 코드 및 패널 상태 관리
-const latestByTab = new Map();
-const panelOpenByTab = new Map();
-
 /**
  * 특정 탭의 최신 페이로드를 저장합니다.
+ * 서비스 워커 중단에 대비해 chrome.storage.session을 사용합니다.
  */
-function storeLatest(tabId, payload) {
-  latestByTab.set(tabId, {
+async function storeLatest(tabId, payload) {
+  const { latestByTab = {} } = await chrome.storage.session.get("latestByTab");
+  latestByTab[tabId] = {
     code: payload.code || "",
     language: payload.language || "text",
     url: payload.url || "",
     theme: payload.theme || "light"
-  });
+  };
+  await chrome.storage.session.set({ latestByTab });
 }
 
 /**
  * 특정 탭의 패널이 열려있는지 확인합니다.
  */
-function isPanelOpen(tabId) {
-  return panelOpenByTab.get(tabId) === true;
+async function isPanelOpen(tabId) {
+  const { panelOpenByTab = {} } = await chrome.storage.session.get("panelOpenByTab");
+  return panelOpenByTab[tabId] === true;
+}
+
+/**
+ * 패널 상태를 업데이트합니다.
+ */
+async function setPanelStatus(tabId, isOpen) {
+  const { panelOpenByTab = {} } = await chrome.storage.session.get("panelOpenByTab");
+  if (isOpen) {
+    panelOpenByTab[tabId] = true;
+  } else {
+    delete panelOpenByTab[tabId];
+  }
+  await chrome.storage.session.set({ panelOpenByTab });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -33,24 +46,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       theme: message.theme || "light"
     };
 
-    storeLatest(tabId, payload);
-    // [수정] 열기 요청 시 상태를 즉시 true로 설정 
-    panelOpenByTab.set(tabId, true);
+    // [수정] 사용자 제스처 유지를 위해 sidePanel.open을 최우선으로 호출
+    // await storeLatest(...)를 기다리면 제스처가 만료되어 패널이 열리지 않음
+    const openPromise = (sender?.tab?.id !== undefined && chrome.sidePanel?.open)
+      ? chrome.sidePanel.open({ tabId: sender.tab.id })
+      : Promise.resolve();
 
-    const sendRender = () => {
-      chrome.runtime.sendMessage({ type: "PRISM_RENDER", tabId, ...payload }, () => {
-        if (chrome.runtime?.lastError) { /* 아직 렌더러가 준비 안 됨 */ }
-      });
-    };
+    (async () => {
+      try {
+        await storeLatest(tabId, payload);
+        await setPanelStatus(tabId, true);
+        await openPromise;
 
-    if (sender?.tab?.id !== undefined && chrome.sidePanel?.open) {
-      chrome.sidePanel.open({ tabId: sender.tab.id })
-        .then(() => setTimeout(sendRender, 300))
-        .catch(() => setTimeout(sendRender, 300));
-    } else {
-      setTimeout(sendRender, 300);
-    }
-    sendResponse({ ok: true, open: true });
+        setTimeout(() => {
+          chrome.runtime.sendMessage({ type: "PRISM_RENDER", tabId, ...payload }, () => {
+            if (chrome.runtime?.lastError) { /* no-op */ }
+          });
+        }, 500);
+        sendResponse({ ok: true, open: true });
+      } catch (e) {
+        console.error("[Prism] Failed to open panel:", e);
+        await setPanelStatus(tabId, false);
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true;
   }
 
   // 2. 코드 복사 시 즉시 렌더링 요청 (오브 노출 결정에 중요)
@@ -62,22 +82,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       theme: message.theme || "light"
     };
 
-    storeLatest(tabId, payload);
+    (async () => {
+      await storeLatest(tabId, payload);
 
-    // 렌더러(사이드패널)로 메시지 전송 시도 
-    chrome.runtime.sendMessage({ type: "PRISM_RENDER", tabId, ...payload }, () => {
-      const err = chrome.runtime?.lastError;
-      if (err) {
-        // 메시지 전송 실패 시, Heartbeat로 유지되는 상태를 확인 (Fallback)
-        const isOpen = isPanelOpen(tabId);
-        if (!isOpen) panelOpenByTab.set(tabId, false);
-        sendResponse({ ok: true, open: isOpen });
-      } else {
-        // 메시지 전송 성공 시 확실히 열림
-        panelOpenByTab.set(tabId, true);
-        sendResponse({ ok: true, open: true });
-      }
-    });
+      // 렌더러(사이드패널)로 메시지 전송 시도 
+      chrome.runtime.sendMessage({ type: "PRISM_RENDER", tabId, ...payload }, async () => {
+        const err = chrome.runtime?.lastError;
+        if (err) {
+          // 메시지 전송 실패 시, Heartbeat로 유지되는 상태를 확인 (Fallback)
+          const isOpen = await isPanelOpen(tabId);
+          if (!isOpen) await setPanelStatus(tabId, false);
+          sendResponse({ ok: true, open: isOpen });
+        } else {
+          // 메시지 전송 성공 시 확실히 열림
+          await setPanelStatus(tabId, true);
+          sendResponse({ ok: true, open: true });
+        }
+      });
+    })();
     return true; // 비동기 응답 처리
   }
 
@@ -86,46 +108,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const statusTabId = message.tabId;
     const isOpen = message.open === true;
 
-    // [중요] 백그라운드 메모리에 상태 저장 (이게 빠져있었습니다) 
-    panelOpenByTab.set(statusTabId, isOpen);
+    (async () => {
+      await setPanelStatus(statusTabId, isOpen);
 
-    // 해당 탭의 content.js로 상태 전파 
-    chrome.tabs.sendMessage(statusTabId, {
-      type: "PRISM_PANEL_STATUS",
-      open: isOpen
-    }).catch(() => { /* 탭이 이미 닫혔을 경우 무시 */ });
+      // 해당 탭의 content.js로 상태 전파 
+      chrome.tabs.sendMessage(statusTabId, {
+        type: "PRISM_PANEL_STATUS",
+        open: isOpen
+      }).catch(() => { /* 탭이 이미 닫혔을 경우 무시 */ });
+    })();
     
     sendResponse({ ok: true });
+    return true;
   }
 
   // 4. content.js에서 현재 패널 상태 문의
   else if (message?.type === "PRISM_PANEL_STATUS_REQUEST") {
-    // [수정] 메모리에 저장된 최신 상태를 반환 [cite: 108]
-    sendResponse({ ok: true, open: isPanelOpen(tabId) });
+    (async () => {
+      const isOpen = await isPanelOpen(tabId);
+      sendResponse({ ok: true, open: isOpen });
+    })();
+    return true;
   }
 
   // 5. 패널이 최신 데이터를 요청할 때 (GET_LATEST)
   else if (message?.type === "PRISM_GET_LATEST") {
-    const targetTabId = message.tabId ?? "_global";
-    const payload = latestByTab.get(targetTabId) || { code: "", language: "text", url: "" };
-    sendResponse({ ok: true, payload });
+    (async () => {
+      const targetTabId = message.tabId ?? "_global";
+      const { latestByTab = {} } = await chrome.storage.session.get("latestByTab");
+      const payload = latestByTab[targetTabId] || { code: "", language: "text", url: "" };
+      sendResponse({ ok: true, payload });
+    })();
+    return true;
   }
   
   // 5-1. 패널에서 최신 데이터를 갱신 저장
   else if (message?.type === "PRISM_SET_LATEST") {
-    const targetTabId = message.tabId ?? "_global";
-    const payload = message.payload || {};
-    storeLatest(targetTabId, payload);
+    (async () => {
+      const targetTabId = message.tabId ?? "_global";
+      const payload = message.payload || {};
+      await storeLatest(targetTabId, payload);
 
-    if (message.notifyTabId) {
-      const notifyTabId = message.notifyTabId;
-      chrome.runtime.sendMessage({ type: "PRISM_RENDER", tabId: targetTabId, ...payload }, () => {
-        if (chrome.runtime?.lastError) {
-          // no-op
-        }
-      });
-    }
-    sendResponse({ ok: true });
+      if (message.notifyTabId) {
+        chrome.runtime.sendMessage({ type: "PRISM_RENDER", tabId: targetTabId, ...payload }, () => {
+          if (chrome.runtime?.lastError) { /* no-op */ }
+        });
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
   }
 
   // 6. 기타 유틸리티 메시지 처리
@@ -187,17 +218,14 @@ chrome.runtime.onConnect.addListener((port) => {
     port.onMessage.addListener((msg) => {
       if (msg.tabId) {
         ownerTabId = msg.tabId;
-        // [수정] Heartbeat가 살아있다면 해당 탭의 패널은 확실히 열려있는 상태임
-        panelOpenByTab.set(ownerTabId, true);
-        // console.log(`[Prism Heartbeat] Connected to Tab ${ownerTabId}`);
+        setPanelStatus(ownerTabId, true);
       }
     });
 
     // 패널이 닫혀서 연결이 끊어지면 실행
     port.onDisconnect.addListener(() => {
       if (ownerTabId) {
-        // 1. 백그라운드 메모리 갱신
-        panelOpenByTab.set(ownerTabId, false);
+        setPanelStatus(ownerTabId, false);
         
         // 2. Content Script에 알림
         chrome.tabs.sendMessage(ownerTabId, {
@@ -210,7 +238,14 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 // 탭 종료 시 메모리 정리
-chrome.tabs.onRemoved.addListener((tabId) => {
-  latestByTab.delete(tabId);
-  panelOpenByTab.delete(tabId);
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const { latestByTab = {}, panelOpenByTab = {} } = await chrome.storage.session.get(["latestByTab", "panelOpenByTab"]);
+  delete latestByTab[tabId];
+  delete panelOpenByTab[tabId];
+  await chrome.storage.session.set({ latestByTab, panelOpenByTab });
+});
+
+chrome.runtime.onSuspend.addListener(() => {
+  // 서비스 워커가 종료되기 직전에 필요한 정리가 있다면 수행합니다.
+  // 현재는 chrome.storage.session을 통해 상태가 자동 유지되므로 추가 작업은 최소화합니다.
 });
