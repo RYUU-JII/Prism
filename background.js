@@ -109,6 +109,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const payload = latestByTab.get(targetTabId) || { code: "", language: "text", url: "" };
     sendResponse({ ok: true, payload });
   }
+  
+  // 5-1. 패널에서 최신 데이터를 갱신 저장
+  else if (message?.type === "PRISM_SET_LATEST") {
+    const targetTabId = message.tabId ?? "_global";
+    const payload = message.payload || {};
+    storeLatest(targetTabId, payload);
+
+    if (message.notifyTabId) {
+      const notifyTabId = message.notifyTabId;
+      chrome.runtime.sendMessage({ type: "PRISM_RENDER", tabId: targetTabId, ...payload }, () => {
+        if (chrome.runtime?.lastError) {
+          // no-op
+        }
+      });
+    }
+    sendResponse({ ok: true });
+  }
 
   // 6. 기타 유틸리티 메시지 처리
   else if (message?.type === "PRISM_DEVLOG") {

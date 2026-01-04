@@ -47,6 +47,11 @@
         </div>
       </header>
       <div class="panel-shell__content">
+        <div class="panel-shell__overlay">
+          <button class="panel-shell__action" id="picker-btn" type="button" aria-label="Pick element">
+            <span>Pick</span>
+          </button>
+        </div>
         <iframe id="viewer" src="sandbox.html" sandbox="allow-scripts"></iframe>
       </div>
       <div id="expert-editor-container" aria-hidden="true">
@@ -55,6 +60,9 @@
       <footer class="panel-shell__footer">
         <button class="panel-shell__action" id="expert-mode-btn" type="button" aria-label="Expert mode">
           <span>Expert</span>
+        </button>
+        <button class="panel-shell__action" id="expert-theme-btn" type="button" aria-label="Toggle editor theme">
+          <span>Dark</span>
         </button>
       </footer>
     </div>

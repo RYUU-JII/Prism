@@ -7,6 +7,8 @@ const saveHtmlBtn = document.getElementById("save-html-btn");
 const openWindowBtn = document.getElementById("open-window-btn");
 const panelShell = document.querySelector(".panel-shell");
 const expertModeBtn = document.getElementById("expert-mode-btn");
+const expertThemeBtn = document.getElementById("expert-theme-btn");
+const pickerBtn = document.getElementById("picker-btn");
 const expertEditorContainer = document.getElementById("expert-editor-container");
 const expertEditorMount = document.getElementById("expert-editor");
 
@@ -18,6 +20,15 @@ let currentTabId = null;
 let expertMode = false;
 let editorView = null;
 let editorApplyingRemote = false;
+let expertTheme = "dark";
+let pickerActive = false;
+let pendingPickerToggle = false;
+let editorInitPromise = null;
+
+const storedTheme = localStorage.getItem("prism-expert-theme");
+if (storedTheme === "light" || storedTheme === "dark") {
+  expertTheme = storedTheme;
+}
 
 const urlParams = new URLSearchParams(window.location.search);
 const targetTabId = urlParams.get("tabId");
@@ -177,69 +188,149 @@ function getCodeMirrorBundle() {
   return window.CM6 || window.CodeMirrorBundle;
 }
 
+function applyExpertThemeUI() {
+  if (expertEditorContainer) {
+    expertEditorContainer.dataset.theme = expertTheme;
+  }
+  if (expertThemeBtn) {
+    const label = expertThemeBtn.querySelector("span");
+    if (label) {
+      label.textContent = expertTheme === "dark" ? "Dark" : "Light";
+    }
+    expertThemeBtn.setAttribute("aria-pressed", expertTheme === "dark" ? "true" : "false");
+  }
+}
+
+function applyPickerUI() {
+  if (pickerBtn) {
+    pickerBtn.classList.toggle("active", pickerActive);
+    pickerBtn.setAttribute("aria-pressed", pickerActive ? "true" : "false");
+  }
+}
+
+function updatePickerAvailability() {
+  const canPick = latestPayload?.language === "html";
+  if (!pickerBtn) return;
+  pickerBtn.disabled = !canPick;
+  pickerBtn.title = canPick ? "Pick element" : "Element picker: HTML only";
+  if (!canPick && pickerActive) {
+    pickerActive = false;
+    applyPickerUI();
+    sendPickerToggle();
+  }
+}
+
+function sendPickerToggle() {
+  if (!viewerReady) {
+    pendingPickerToggle = true;
+    return;
+  }
+  pendingPickerToggle = false;
+  console.log("[Prism] Picker toggle -> sandbox", { active: pickerActive });
+  viewer.contentWindow.postMessage(
+    { type: "PRISM_PICKER_TOGGLE", active: pickerActive },
+    "*"
+  );
+}
+
+function buildEditorTheme(CM) {
+  const isDark = expertTheme === "dark";
+  return CM.EditorView.theme({
+    "&": {
+      height: "100%",
+      backgroundColor: isDark ? "#1e1e1e" : "#ffffff",
+      color: isDark ? "#d4d4d4" : "#1f1f1f"
+    },
+    ".cm-scroller": { overflow: "auto" },
+    ".cm-gutters": {
+      backgroundColor: isDark ? "#252526" : "#f3f3f3",
+      color: isDark ? "#858585" : "#6b6b6b",
+      borderRight: isDark ? "1px solid #333333" : "1px solid #e1e1e1"
+    },
+    ".cm-content": {
+      fontFamily: "'Consolas', 'Monaco', 'Courier New', monospace",
+      fontSize: "14px",
+      lineHeight: "1.5",
+      padding: "10px 0"
+    },
+    ".cm-cursor": { borderLeftColor: isDark ? "#aeafad" : "#111111" },
+    ".cm-selectionBackground": { backgroundColor: isDark ? "#264f78" : "#add6ff" },
+    ".cm-activeLine": { backgroundColor: isDark ? "#2a2d2e" : "#f0f0f0" },
+    ".cm-activeLineGutter": { backgroundColor: isDark ? "#2a2d2e" : "#f0f0f0" }
+  });
+}
+
 async function ensureExpertEditor() {
-  if (editorView || !expertEditorMount) return;
+  if (editorView) return editorView;
+  if (!expertEditorMount) return null;
+  if (editorInitPromise) return editorInitPromise;
 
   // 1. 번들이 실행될 때 참조할 전역 객체를 미리 생성 (ReferenceError 방지)
   window.codemirror = window.codemirror || {};
 
-  try {
-    // 2. 스크립트 로드
-    await loadScriptOnce("sidepanel/vendor/codemirror-bundle.js", "CodeMirrorBundle");
+  editorInitPromise = (async () => {
+    try {
+      // 2. 스크립트 로드
+      await loadScriptOnce("sidepanel/vendor/codemirror-bundle.js", "CodeMirrorBundle");
 
-    // 3. 번들이 'codemirror' 객체에 기능을 채웠다면, 이를 'CodeMirrorBundle'로 연결
-    if (window.codemirror && (window.codemirror.EditorView || window.codemirror.basicSetup)) {
-        window.CodeMirrorBundle = window.codemirror;
-    }
-
-    const CM = getCodeMirrorBundle();
-    
-    // 디버깅용: 실제로 무엇이 로드되었는지 콘솔에서 확인 가능합니다.
-    console.log("[Prism] CodeMirror Bundle Object:", CM);
-
-    if (!CM || !CM.EditorView) {
-      throw new Error("EditorView not found in bundle. Check if the bundle exports 'codemirror' or 'CodeMirrorBundle'.");
-    }
-
-    // 4. 에디터 생성 로직 (기존과 동일)
-    const updateListener = CM.EditorView.updateListener.of((update) => {
-      if (update.docChanged && !editorApplyingRemote) {
-        const newCode = update.state.doc.toString();
-        // 샌드박스로 변경사항 전송
-        postToSandbox({ type: "PRISM_EXPERT_UPDATE", code: newCode });
+      // 3. 번들이 'codemirror' 객체에 기능을 채웠다면, 이를 'CodeMirrorBundle'로 연결
+      if (window.codemirror && (window.codemirror.EditorView || window.codemirror.basicSetup)) {
+          window.CodeMirrorBundle = window.codemirror;
       }
-    });
 
-    editorView = new CM.EditorView({
-      state: CM.EditorState.create({
-        // [수정] 아래 line의 doc 부분에 "Hello" 또는 초기 코드를 넣습니다.
-        doc: latestPayload?.code || "", 
-        extensions: [
-          CM.basicSetup,
-          CM.html(),
-          updateListener,
-          // 에디터가 안 보일 때를 대비해 강제로 높이와 스타일 부여
-          CM.EditorView.theme({
-            "&": { 
-              height: "100%", 
-              backgroundColor: "#1e1e1e",
-              color: "#ffffff" 
-            },
-            ".cm-scroller": { overflow: "auto" },
-            ".cm-content": { 
-              fontFamily: "'Consolas', 'Monaco', monospace", 
-              fontSize: "14px",
-              padding: "10px 0"
-            }
-          })
-        ],
-      }),
-      parent: expertEditorMount,
-    });
+      const CM = getCodeMirrorBundle();
+    
+      // 디버깅용: 실제로 무엇이 로드되었는지 콘솔에서 확인 가능합니다.
+      console.log("[Prism] CodeMirror Bundle Object:", CM);
 
-  } catch (err) {
-    console.error("[Prism] Expert Editor Init Error:", err);
-  }
+      if (!CM || !CM.EditorView) {
+        throw new Error("EditorView not found in bundle. Check if the bundle exports 'codemirror' or 'CodeMirrorBundle'.");
+      }
+
+      // 4. 에디터 생성 로직 (기존과 동일)
+      const updateListener = CM.EditorView.updateListener.of((update) => {
+        if (!update.docChanged || editorApplyingRemote) return;
+        const newCode = update.state.doc.toString();
+        renderPayload(newCode, detectKind(newCode), latestPayload?.url, latestPayload?.theme);
+      });
+
+      const extensions = [
+        CM.basicSetup,
+        CM.html(),
+        updateListener,
+        buildEditorTheme(CM)
+      ];
+
+      if (expertEditorMount) {
+        expertEditorMount.textContent = "";
+      }
+
+      if (CM.EditorState?.create) {
+        editorView = new CM.EditorView({
+          state: CM.EditorState.create({
+            doc: latestPayload?.code || "",
+            extensions
+          }),
+          parent: expertEditorMount
+        });
+      } else {
+        editorView = new CM.EditorView({
+          doc: latestPayload?.code || "",
+          extensions,
+          parent: expertEditorMount
+        });
+      }
+
+      return editorView;
+    } catch (err) {
+      console.error("[Prism] Expert Editor Init Error:", err);
+      return null;
+    } finally {
+      editorInitPromise = null;
+    }
+  })();
+
+  return editorInitPromise;
 }
 
 function setEditorContent(code) {
@@ -249,6 +340,40 @@ function setEditorContent(code) {
     changes: { from: 0, to: editorView.state.doc.length, insert: code || "" }
   });
   editorApplyingRemote = false;
+}
+
+function focusEditorAtLine(lineNumber) {
+  const targetLine = Number(lineNumber);
+  if (!Number.isFinite(targetLine) || targetLine < 1) return;
+
+  const applySelection = () => {
+    if (!editorView) return;
+    const line = editorView.state.doc.line(targetLine);
+    editorView.dispatch({
+      selection: { anchor: line.from, head: line.to },
+      scrollIntoView: true
+    });
+    editorView.focus();
+  };
+
+  if (!expertMode) {
+    setExpertMode(true, { skipEditorSync: true });
+  }
+
+  if (!editorView) {
+    ensureExpertEditor().then(() => {
+      if (editorView && latestPayload?.code) {
+        const current = editorView.state.doc.toString();
+        if (current !== latestPayload.code) {
+          setEditorContent(latestPayload.code);
+        }
+      }
+      applySelection();
+    });
+    return;
+  }
+
+  applySelection();
 }
 
 function applyInlineStyles(element, styles) {
@@ -433,10 +558,144 @@ function normalizeSource(url) {
 }
 
 function detectKind(code) {
-  if (/from\s+['"]react['"]|ReactDOM|useState\(|className=/i.test(code)) return "react";
-  if (/from\s+['"]vue['"]|createApp\s*\(|new\s+Vue\s*\(/i.test(code)) return "vue";
+  if (!code || typeof code !== "string") return "text";
+
+  // 1. Explicit HTML Document
+  if (/^\s*<!DOCTYPE\s+html/i.test(code) || /<html[\s>]/i.test(code)) {
+    return "html";
+  }
+
+  // 2. Strong React/Vue Source Indicators
+  const sourceIndicators = [
+    /^\s*import\s+.*\s+from\s+['"].*['"]/m,
+    /^\s*export\s+(default\s+)?(function|class|const|var|let)\s+/m,
+    /className\s*=/i,
+    /htmlFor\s*=/i,
+    /dangerouslySetInnerHTML/i,
+    /<\s*>\s*[\s\S]*<\/\s*>/, // Fragment
+    /\bv-(if|for|else|model|show|bind|on)\b/,
+    /@click\s*=|@submit\s*=/,
+    /:\w+\s*=/
+  ];
+
+  if (sourceIndicators.some(r => r.test(code))) {
+    if (/\bv-|@click|:\w+=|<template>|from\s+['"]vue['"]/.test(code)) return "vue";
+    return "react";
+  }
+
+  // 3. Framework specific keywords (Hooks, API)
+  if (/useState\s*\(|useEffect\s*\(|use[A-Z][a-zA-Z]*\s*\(|ReactDOM/.test(code)) return "react";
+  if (/createApp\s*\(|defineComponent\s*\(|from\s+['"]vue['"]/.test(code)) return "vue";
+
+  // 4. Generic HTML Fragment
   if (/<[a-z][\s\S]*>/i.test(code)) return "html";
+
   return "text";
+}
+
+function countNewlines(text) {
+  let count = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === "\n") count += 1;
+  }
+  return count;
+}
+
+function addPrismLineAttributes(html) {
+  if (!html) return html;
+
+  const lower = html.toLowerCase();
+  let out = "";
+  let i = 0;
+  let line = 1;
+  let inScript = false;
+  let inStyle = false;
+
+  while (i < html.length) {
+    if (inScript || inStyle) {
+      const endTag = inScript ? "</script" : "</style";
+      const endIndex = lower.indexOf(endTag, i);
+      if (endIndex === -1) {
+        const chunk = html.slice(i);
+        out += chunk;
+        line += countNewlines(chunk);
+        return out;
+      }
+      const chunk = html.slice(i, endIndex);
+      out += chunk;
+      line += countNewlines(chunk);
+      i = endIndex;
+      inScript = false;
+      inStyle = false;
+      continue;
+    }
+
+    const ch = html[i];
+    if (ch !== "<") {
+      if (ch === "\n") line += 1;
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    const next = lower[i + 1];
+    if (next === "/" || next === "!" || next === "?") {
+      out += "<";
+      i += 1;
+      continue;
+    }
+
+    let j = i + 1;
+    while (j < html.length && /\s/.test(html[j])) j += 1;
+    const nameStart = j;
+    while (j < html.length && /[A-Za-z0-9:-]/.test(html[j])) j += 1;
+    const tagName = html.slice(nameStart, j);
+    if (!tagName) {
+      out += "<";
+      i += 1;
+      continue;
+    }
+
+    let k = j;
+    let quote = null;
+    while (k < html.length) {
+      const c = html[k];
+      if (quote) {
+        if (c === quote) quote = null;
+      } else if (c === '"' || c === "'") {
+        quote = c;
+      } else if (c === ">") {
+        break;
+      }
+      k += 1;
+    }
+
+    if (k >= html.length) {
+      out += html.slice(i);
+      return out;
+    }
+
+    const tagText = html.slice(i, k + 1);
+    const hasLine = /data-prism-line\s*=/.test(tagText);
+    const prefix = html.slice(i + 1, nameStart);
+    const rest = html.slice(j, k + 1);
+    const isSelfClosing = /\/\s*>$/.test(tagText);
+    const tagLower = tagName.toLowerCase();
+
+    if (!hasLine) {
+      out += `<${prefix}${tagName} data-prism-line="${line}"${rest}`;
+    } else {
+      out += tagText;
+    }
+
+    line += countNewlines(tagText);
+    i = k + 1;
+
+    if (!isSelfClosing && tagLower === "script") inScript = true;
+    if (!isSelfClosing && tagLower === "style") inStyle = true;
+  }
+
+  return out;
 }
 
 function postToSandbox(payload) {
@@ -469,6 +728,8 @@ function fixRelativePaths(html, baseUrl) {
 
 function renderPayload(code, language, url, theme) {
   if (!code) {
+    latestPayload = null;
+    updatePickerAvailability();
     postToSandbox({ code: "", language: "text", url: "" });
     return;
   }
@@ -476,9 +737,11 @@ function renderPayload(code, language, url, theme) {
   const kind = language && language !== "text" ? language : detectKind(code);
   const source = normalizeSource(url);
   const fixedCode = fixRelativePaths(code, source);
+  const sandboxCode = kind === "html" ? addPrismLineAttributes(fixedCode) : fixedCode;
 
   latestPayload = { code, language: kind, url: source, theme: theme || "light" };
-  postToSandbox({ ...latestPayload, code: fixedCode });
+  postToSandbox({ ...latestPayload, code: sandboxCode });
+  updatePickerAvailability();
 }
 
 function updateViewer(code, language, url, theme) {
@@ -507,8 +770,9 @@ function updateViewer(code, language, url, theme) {
   renderPayload(code, language, url, theme);
 }
 
-function setExpertMode(active) {
+function setExpertMode(active, options = {}) {
   expertMode = Boolean(active);
+  applyExpertThemeUI();
   if (expertEditorContainer) {
     expertEditorContainer.classList.toggle("active", expertMode);
     expertEditorContainer.setAttribute("aria-hidden", expertMode ? "false" : "true");
@@ -520,8 +784,11 @@ function setExpertMode(active) {
 
   if (expertMode) {
     ensureExpertEditor().then(() => {
-      if (editorView) {
-        setEditorContent(latestPayload?.code || "");
+      if (editorView && !options.skipEditorSync) {
+        const nextCode = latestPayload?.code || "";
+        if (nextCode && editorView.state.doc.toString() !== nextCode) {
+          setEditorContent(nextCode);
+        }
       }
       if (latestPayload?.code) {
         renderPayload(latestPayload.code, latestPayload.language, latestPayload.url, latestPayload.theme);
@@ -571,24 +838,52 @@ if (openWindowBtn) {
       alert("렌더링할 코드가 없습니다.");
       return;
     }
+    const tabId = currentTabId ?? "_global";
+    const url = chrome.runtime.getURL(`sidepanel/window.html?tabId=${encodeURIComponent(tabId)}`);
 
-    const blob = new Blob([latestPayload.code], { type: "text/html;charset=utf-8" });
-    const reader = new FileReader();
-
-    reader.onloadend = function() {
-      const tabId = currentTabId ?? "temp";
-      const url = chrome.runtime.getURL(`sidepanel/window.html?tabId=${encodeURIComponent(tabId)}`);
-
-      chrome.tabs.create({ url: url });
-      window.close();
-    };
-    reader.readAsDataURL(blob);
+    chrome.tabs.create({ url }, (createdTab) => {
+      const notifyTabId = createdTab?.id;
+      chrome.runtime.sendMessage({
+        type: "PRISM_SET_LATEST",
+        tabId,
+        payload: latestPayload,
+        notifyTabId
+      }, () => {
+        window.close();
+      });
+    });
   });
 }
 
 if (expertModeBtn) {
   expertModeBtn.addEventListener("click", () => {
     setExpertMode(!expertMode);
+  });
+}
+
+if (pickerBtn) {
+  pickerBtn.addEventListener("click", () => {
+    if (pickerBtn.disabled) return;
+    pickerActive = !pickerActive;
+    applyPickerUI();
+    sendPickerToggle();
+  });
+}
+
+if (expertThemeBtn) {
+  expertThemeBtn.addEventListener("click", () => {
+    expertTheme = expertTheme === "dark" ? "light" : "dark";
+    localStorage.setItem("prism-expert-theme", expertTheme);
+    applyExpertThemeUI();
+    if (editorView) {
+      const code = editorView.state.doc.toString();
+      editorView.destroy();
+      editorView = null;
+      if (expertEditorMount) {
+        expertEditorMount.textContent = "";
+      }
+      ensureExpertEditor().then(() => setEditorContent(code));
+    }
   });
 }
 
@@ -653,7 +948,16 @@ window.addEventListener("message", (event) => {
     return;
   }
 
+  if (data.type === "PRISM_PICKER_SELECT") {
+    pickerActive = false;
+    applyPickerUI();
+    sendPickerToggle();
+    focusEditorAtLine(data.line);
+    return;
+  }
+
   if (data.type === "PRISM_DEVLOG") {
+    console.log("[Prism Sandbox]", data.stage || "unknown", data.payload || {});
     chrome.runtime.sendMessage({
       type: "PRISM_DEVLOG",
       source: "sandbox",
@@ -699,6 +1003,9 @@ viewer.addEventListener("load", () => {
     postToSandbox(pendingPayload);
     pendingPayload = null;
   }
+  if (pendingPickerToggle) {
+    sendPickerToggle();
+  }
 });
 
 window.addEventListener("beforeunload", () => {
@@ -738,5 +1045,6 @@ function notifyPanelStatus(open) {
   }
 }
 
-
 requestLatest();
+applyExpertThemeUI();
+applyPickerUI();

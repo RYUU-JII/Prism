@@ -37,6 +37,7 @@ body {
   flex: 1;
   width: 100%;
   height: 100%;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 22px;
   display: block;
@@ -51,12 +52,16 @@ body {
   gap: 10px;
   position: relative;
   z-index: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .panel-shell__content {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
+  position: relative;
 }
 
 .panel-shell__bar {
@@ -68,6 +73,9 @@ body {
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.7);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .panel-shell__left {
@@ -123,6 +131,32 @@ body {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
 }
 
+.panel-shell__action.active {
+  box-shadow: 0 0 0 1px rgba(79, 210, 195, 0.6), 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.panel-shell__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.panel-shell__overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.panel-shell__overlay .panel-shell__action {
+  backdrop-filter: blur(10px);
+}
+
 .panel-shell__action:active {
   transform: translateY(0);
 }
@@ -143,6 +177,9 @@ body {
   background: rgba(255, 255, 255, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.7);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
 }
 
 body::before,
@@ -343,6 +380,7 @@ body::after {
 }
 
 #expert-editor-container {
+  flex: 0 0 0;
   width: 100%;
   height: 0;
   border-radius: 18px 18px 0 0;
@@ -357,58 +395,62 @@ body::after {
 }
 
 #expert-editor-container.active {
-  height: 60%;
+  flex: 0 0 auto;
+  height: clamp(220px, 45%, 520px);
   opacity: 1;
   margin-top: 10px;
   border-top: 1px solid var(--accent-cool);
 }
 
+#expert-editor-container[data-theme="light"] {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
 #expert-editor {
-  height: 100%;
+  flex: 1;
   width: 100%;
+  height: 100%;
+  min-height: 200px;
 }
 
 .cm-editor {
   height: 100% !important;
+  width: 100% !important;
 }
 
-#expert-editor-container .cm-editor {
+#expert-editor-container[data-theme="dark"] .cm-editor {
   height: 100%;
   background: #1e1e1e;
   color: #e5e7eb;
 }
 
-#expert-editor-container .cm-gutters {
+#expert-editor-container[data-theme="dark"] .cm-gutters {
   background: #1e1e1e;
   color: #8a93a4;
   border-right: 1px solid #2a2a2a;
 }
 
-#expert-editor-container .cm-content {
+#expert-editor-container[data-theme="dark"] .cm-content {
   caret-color: #f8fafc;
+}
+
+#expert-editor-container[data-theme="light"] .cm-editor {
+  height: 100%;
+  background: #ffffff;
+  color: #1f1f1f;
+}
+
+#expert-editor-container[data-theme="light"] .cm-gutters {
+  background: #f3f3f3;
+  color: #6b6b6b;
+  border-right: 1px solid #e1e1e1;
+}
+
+#expert-editor-container[data-theme="light"] .cm-content {
+  caret-color: #111111;
 }
 
 #expert-editor-container .cm-scroller {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-}
-
-/* theme.css 에 추가 */
-
-#expert-editor-container.active {
-  height: 300px; /* 또는 60% */
-  display: flex; /* 내부 에디터를 꽉 채우기 위해 flex 권장 */
-  flex-direction: column;
-}
-
-#expert-editor {
-  flex: 1;      /* 남은 공간 모두 차지 */
-  width: 100%;
-  height: 100%;
-  min-height: 200px; /* 최소 높이 보장 */
-}
-
-/* CodeMirror 내부 클래스 강제 스타일링 */
-.cm-editor {
-  height: 100% !important;
-  width: 100% !important;
 }
