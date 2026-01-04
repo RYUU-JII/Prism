@@ -58,6 +58,7 @@
       const libraryRegistry = new Map();
       const renderers = new Map();
       let activeReactRoot = null;
+      let pickerActive = false;
       const babelCache = new Map();
       const BABEL_CACHE_MAX = 12;
       const MAX_BABEL_CHARS = 120000;
@@ -156,7 +157,7 @@
         // [수정됨] iframe 내부 브릿지: 데스크톱 너비(1280px) 전송
         const snapshotBridge = `<script>
           window.addEventListener("message", function(event) {
-            if (event.source !== parent || event.data?.type !== "PRISM_SNAPSHOT") return;
+            if (event.source !== parent || !event.data || event.data.type !== "PRISM_SNAPSHOT") return;
             try {
               const bodyStyle = window.getComputedStyle(document.body);
               const htmlStyle = window.getComputedStyle(document.documentElement);
@@ -201,6 +202,126 @@
               parent.postMessage({ type: "PRISM_RETURN_REQUEST" }, "*");
             }
           });
+
+          let prismPickerActive = false;
+          let prismPickerOverlay = null;
+          let prismPickerTarget = null;
+          let prismMotionStyle = null;
+
+          function setMotionFreeze(active) {
+            if (active) {
+              if (prismMotionStyle) return;
+              const style = document.createElement("style");
+              style.id = "prism-picker-freeze";
+              style.textContent = [
+                "html, body { scroll-behavior: auto !important; }",
+                "*, *::before, *::after {",
+                "  animation-play-state: paused !important;",
+                "  transition: none !important;",
+                "}"
+              ].join("\\n");
+              document.head.appendChild(style);
+              prismMotionStyle = style;
+              return;
+            }
+            if (prismMotionStyle) {
+              prismMotionStyle.remove();
+              prismMotionStyle = null;
+            }
+          }
+
+          function ensurePickerOverlay() {
+            if (prismPickerOverlay) return prismPickerOverlay;
+            const overlay = document.createElement("div");
+            overlay.style.position = "fixed";
+            overlay.style.zIndex = "2147483647";
+            overlay.style.pointerEvents = "none";
+            overlay.style.border = "2px solid rgba(79, 210, 195, 0.9)";
+            overlay.style.background = "rgba(79, 210, 195, 0.12)";
+            overlay.style.boxShadow = "0 0 0 1px rgba(0, 0, 0, 0.2)";
+            overlay.style.borderRadius = "6px";
+            document.documentElement.appendChild(overlay);
+            prismPickerOverlay = overlay;
+            return overlay;
+          }
+
+          function updatePickerOverlay(target) {
+            if (!target || !target.getBoundingClientRect) return;
+            const rect = target.getBoundingClientRect();
+            if (!rect.width && !rect.height) return;
+            const overlay = ensurePickerOverlay();
+            overlay.style.left = rect.left + "px";
+            overlay.style.top = rect.top + "px";
+            overlay.style.width = rect.width + "px";
+            overlay.style.height = rect.height + "px";
+          }
+
+          function clearPickerOverlay() {
+            if (!prismPickerOverlay) return;
+            prismPickerOverlay.remove();
+            prismPickerOverlay = null;
+            prismPickerTarget = null;
+          }
+
+          function setPickerActive(active) {
+            prismPickerActive = Boolean(active);
+            document.body.style.cursor = prismPickerActive ? "crosshair" : "";
+            setMotionFreeze(prismPickerActive);
+            if (!prismPickerActive) {
+              clearPickerOverlay();
+            }
+          }
+
+          function pickTarget(rawTarget) {
+            if (!(rawTarget instanceof Element)) return null;
+            return rawTarget.closest("[data-prism-line]") || rawTarget;
+          }
+
+          document.addEventListener("mousemove", function(event) {
+            if (!prismPickerActive) return;
+            const target = pickTarget(event.target);
+            if (!target || target === document.documentElement || target === document.body) return;
+            prismPickerTarget = target;
+            updatePickerOverlay(target);
+          }, true);
+
+          document.addEventListener("click", function(event) {
+            if (!prismPickerActive) return;
+            try {
+              event.preventDefault();
+              event.stopPropagation();
+              event.stopImmediatePropagation();
+            } catch (e) {}
+            const target = pickTarget(event.target);
+            if (!target) return;
+            const line = Number(target.getAttribute("data-prism-line")) || 1;
+            parent.postMessage({ type: "PRISM_PICKER_SELECT", line }, "*");
+          }, true);
+
+          document.addEventListener("scroll", function() {
+            if (!prismPickerActive || !prismPickerTarget) return;
+            updatePickerOverlay(prismPickerTarget);
+          }, true);
+
+          window.addEventListener("message", function(event) {
+            if (!event.data || event.data.type !== "PRISM_PICKER_TOGGLE") return;
+            try {
+              parent.postMessage({
+                type: "PRISM_DEVLOG",
+                stage: "picker-toggle-received",
+                payload: { active: Boolean(event.data.active) }
+              }, "*");
+            } catch (e) {}
+            setPickerActive(Boolean(event.data.active));
+          });
+
+          try {
+            parent.postMessage({
+              type: "PRISM_DEVLOG",
+              stage: "picker-bridge-loaded",
+              payload: { ok: true }
+            }, "*");
+          } catch (e) {}
         </` + "script>";
         
         frame.srcdoc = `<!DOCTYPE html><html class="${theme === "dark" ? "dark" : ""}">
@@ -210,6 +331,11 @@
           </head>
           <body>${code}</body></html>`;
         root.appendChild(frame);
+        frame.addEventListener("load", () => {
+          if (pickerActive && frame.contentWindow) {
+            frame.contentWindow.postMessage({ type: "PRISM_PICKER_TOGGLE", active: true }, "*");
+          }
+        });
       }
 
       // --- [4. 캡처 데이터 추출 및 전송 로직] ---
@@ -308,14 +434,37 @@
           return;
         }
 
+        if (data.type === "PRISM_DEVLOG" && event.source === iframeWindow) {
+          window.parent.postMessage(data, "*");
+          return;
+        }
+
+        if (data.type === "PRISM_PICKER_SELECT" && event.source === iframeWindow) {
+          window.parent.postMessage(data, "*");
+          return;
+        }
+
         // iframe 내부(HTML srcdoc)에서 온 "돌아가기" 요청을 부모로 전달
         if (data.type === "PRISM_RETURN_REQUEST" && event.source === iframeWindow) {
           window.parent.postMessage({ type: "PRISM_RETURN_REQUEST" }, "*");
           return;
         }
         
+        if (data.type === "PRISM_PICKER_TOGGLE") {
+          pickerActive = Boolean(data.active);
+          if (iframeWindow) {
+            iframeWindow.postMessage({ type: "PRISM_PICKER_TOGGLE", active: pickerActive }, "*");
+          }
+          window.parent.postMessage({
+            type: "PRISM_DEVLOG",
+            stage: "picker-toggle-forwarded",
+            payload: { active: pickerActive, hasIframe: Boolean(iframeWindow) }
+          }, "*");
+          return;
+        }
+
         if (event.source !== window.parent) return;
-        
+
         if (data.type === "RENDER") {
           const kind = data.language === "html" ? "html" : (data.language === "react" ? "react" : "text");
           if (kind === "react") renderReact(data.code, data.theme);

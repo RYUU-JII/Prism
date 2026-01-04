@@ -6,7 +6,7 @@ let lastCode = "";
 let lastLanguage = "text";
 let hideTimer = null;
 const SPY_SOURCE = "prism-clipboard";
-const GESTURE_WINDOW_MS = 2000;
+const GESTURE_WINDOW_MS = 4000;
 let lastUserGestureAt = 0;
 let panelOpen = false;
 
@@ -34,17 +34,39 @@ function safeSendMessage(message, callback) {
   }
 }
 
-// ... (detectKind, normalizeClipboard, detectTheme 함수는 기존과 동일) ...
-function detectKind(text) {
-  if (!text) return "text";
-  const reactHints = [/from\s+['"]react['"]/i, /import\s+React/i, /ReactDOM/i, /className=/i, /useState\(/i, /useEffect\(/i];
-  const vueHints = [/from\s+['"]vue['"]/i, /createApp\s*\(/i, /new\s+Vue\s*\(/i, /defineComponent\(/i];
-  const htmlHints = [/<!doctype html/i, /<html[\s>]/i, /<body[\s>]/i, /<head[\s>]/i, /<template[\s>]/i, /<div[\s>]/i, /<section[\s>]/i];
+function detectKind(code) {
+  if (!code || typeof code !== "string") return "text";
 
-  if (reactHints.some((re) => re.test(text))) return "react";
-  if (vueHints.some((re) => re.test(text))) return "vue";
-  if (htmlHints.some((re) => re.test(text))) return "html";
-  if (/<[a-z][\s\S]*>/i.test(text)) return "html";
+  // 1. Explicit HTML Document
+  if (/^\s*<!DOCTYPE\s+html/i.test(code) || /<html[\s>]/i.test(code)) {
+    return "html";
+  }
+
+  // 2. Strong React/Vue Source Indicators
+  const sourceIndicators = [
+    /^\s*import\s+.*\s+from\s+['"].*['"]/m,
+    /^\s*export\s+(default\s+)?(function|class|const|var|let)\s+/m,
+    /className\s*=/i,
+    /htmlFor\s*=/i,
+    /dangerouslySetInnerHTML/i,
+    /<\s*>\s*[\s\S]*<\/\s*>/, // Fragment
+    /\bv-(if|for|else|model|show|bind|on)\b/,
+    /@click\s*=|@submit\s*=/,
+    /:\w+\s*=/
+  ];
+
+  if (sourceIndicators.some(r => r.test(code))) {
+    if (/\bv-|@click|:\w+=|<template>|from\s+['"]vue['"]/.test(code)) return "vue";
+    return "react";
+  }
+
+  // 3. Framework specific keywords (Hooks, API)
+  if (/useState\s*\(|useEffect\s*\(|use[A-Z][a-zA-Z]*\s*\(|ReactDOM/.test(code)) return "react";
+  if (/createApp\s*\(|defineComponent\s*\(|from\s+['"]vue['"]/.test(code)) return "vue";
+
+  // 4. Generic HTML Fragment
+  if (/<[a-z][\s\S]*>/i.test(code)) return "html";
+
   return "text";
 }
 
