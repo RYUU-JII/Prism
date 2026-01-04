@@ -12,6 +12,9 @@ const pickerBtn = document.getElementById("picker-btn");
 const expertEditorContainer = document.getElementById("expert-editor-container");
 const expertEditorMount = document.getElementById("expert-editor");
 
+const ENABLE_EXPERT_MODE = false;
+const ENABLE_PICKER = false;
+
 let pendingPayload = null;
 let viewerReady = false;
 let latestPayload = null;
@@ -24,6 +27,23 @@ let expertTheme = "dark";
 let pickerActive = false;
 let pendingPickerToggle = false;
 let editorInitPromise = null;
+let lastRenderKey = "";
+let hasRenderedOnce = false;
+
+if (!ENABLE_EXPERT_MODE) {
+  document.body.classList.add("prism-no-expert");
+  if (expertModeBtn) expertModeBtn.disabled = true;
+  if (expertThemeBtn) expertThemeBtn.disabled = true;
+  if (expertEditorContainer) expertEditorContainer.setAttribute("aria-hidden", "true");
+  expertMode = false;
+}
+
+if (!ENABLE_PICKER) {
+  document.body.classList.add("prism-no-picker");
+  if (pickerBtn) pickerBtn.disabled = true;
+  pickerActive = false;
+  pendingPickerToggle = false;
+}
 
 const storedTheme = localStorage.getItem("prism-expert-theme");
 if (storedTheme === "light" || storedTheme === "dark") {
@@ -189,6 +209,7 @@ function getCodeMirrorBundle() {
 }
 
 function applyExpertThemeUI() {
+  if (!ENABLE_EXPERT_MODE) return;
   if (expertEditorContainer) {
     expertEditorContainer.dataset.theme = expertTheme;
   }
@@ -201,7 +222,15 @@ function applyExpertThemeUI() {
   }
 }
 
+function applyGlobalTheme(theme) {
+  if (!theme) return;
+  document.body.dataset.theme = theme;
+  expertTheme = theme;
+  applyExpertThemeUI();
+}
+
 function applyPickerUI() {
+  if (!ENABLE_PICKER) return;
   if (pickerBtn) {
     pickerBtn.classList.toggle("active", pickerActive);
     pickerBtn.setAttribute("aria-pressed", pickerActive ? "true" : "false");
@@ -209,6 +238,7 @@ function applyPickerUI() {
 }
 
 function updatePickerAvailability() {
+  if (!ENABLE_PICKER) return;
   const canPick = latestPayload?.language === "html";
   if (!pickerBtn) return;
   pickerBtn.disabled = !canPick;
@@ -221,6 +251,7 @@ function updatePickerAvailability() {
 }
 
 function sendPickerToggle() {
+  if (!ENABLE_PICKER) return;
   if (!viewerReady) {
     pendingPickerToggle = true;
     return;
@@ -726,6 +757,14 @@ function fixRelativePaths(html, baseUrl) {
   });
 }
 
+function buildRenderKey(code, language, url, theme) {
+  if (!code) return "";
+  const kind = language && language !== "text" ? language : detectKind(code);
+  const source = normalizeSource(url);
+  const resolvedTheme = theme || "light";
+  return `${kind}::${resolvedTheme}::${source || ""}::${code}`;
+}
+
 function renderPayload(code, language, url, theme) {
   if (!code) {
     latestPayload = null;
@@ -746,11 +785,22 @@ function renderPayload(code, language, url, theme) {
 
 function updateViewer(code, language, url, theme) {
   if (!code) {
+    lastRenderKey = "";
+    hasRenderedOnce = false;
     renderPayload(code, language, url, theme);
     return;
   }
 
-  if (expertMode) {
+  applyGlobalTheme(theme);
+
+  const nextKey = buildRenderKey(code, language, url, theme);
+  if (hasRenderedOnce && nextKey === lastRenderKey) {
+    return;
+  }
+  lastRenderKey = nextKey;
+  hasRenderedOnce = true;
+
+  if (ENABLE_EXPERT_MODE && expertMode) {
     if (editorView) {
       setEditorContent(code);
       renderPayload(code, language, url, theme);
@@ -771,6 +821,10 @@ function updateViewer(code, language, url, theme) {
 }
 
 function setExpertMode(active, options = {}) {
+  if (!ENABLE_EXPERT_MODE) {
+    expertMode = false;
+    return;
+  }
   expertMode = Boolean(active);
   applyExpertThemeUI();
   if (expertEditorContainer) {
@@ -855,13 +909,13 @@ if (openWindowBtn) {
   });
 }
 
-if (expertModeBtn) {
+if (expertModeBtn && ENABLE_EXPERT_MODE) {
   expertModeBtn.addEventListener("click", () => {
     setExpertMode(!expertMode);
   });
 }
 
-if (pickerBtn) {
+if (pickerBtn && ENABLE_PICKER) {
   pickerBtn.addEventListener("click", () => {
     if (pickerBtn.disabled) return;
     pickerActive = !pickerActive;
@@ -870,11 +924,11 @@ if (pickerBtn) {
   });
 }
 
-if (expertThemeBtn) {
+if (expertThemeBtn && ENABLE_EXPERT_MODE) {
   expertThemeBtn.addEventListener("click", () => {
-    expertTheme = expertTheme === "dark" ? "light" : "dark";
-    localStorage.setItem("prism-expert-theme", expertTheme);
-    applyExpertThemeUI();
+    const newTheme = expertTheme === "dark" ? "light" : "dark";
+    localStorage.setItem("prism-expert-theme", newTheme);
+    applyGlobalTheme(newTheme);
     if (editorView) {
       const code = editorView.state.doc.toString();
       editorView.destroy();
@@ -949,6 +1003,7 @@ window.addEventListener("message", (event) => {
   }
 
   if (data.type === "PRISM_PICKER_SELECT") {
+    if (!ENABLE_PICKER) return;
     pickerActive = false;
     applyPickerUI();
     sendPickerToggle();
@@ -999,11 +1054,12 @@ window.addEventListener("message", (event) => {
 
 viewer.addEventListener("load", () => {
   viewerReady = true;
+  viewer.classList.add("is-ready");
   if (pendingPayload) {
     postToSandbox(pendingPayload);
     pendingPayload = null;
   }
-  if (pendingPickerToggle) {
+  if (pendingPickerToggle && ENABLE_PICKER) {
     sendPickerToggle();
   }
 });
@@ -1014,11 +1070,28 @@ window.addEventListener("beforeunload", () => {
 
 let lifecyclePort = null;
 
-try {
-  lifecyclePort = chrome.runtime.connect({ name: "prism-heartbeat" });
-} catch (e) {
-  console.warn("[Prism] Failed to connect heartbeat:", e);
+function connectHeartbeat() {
+  try {
+    lifecyclePort = chrome.runtime.connect({ name: "prism-heartbeat" });
+    
+    // Service Worker가 재시작되어 연결이 끊기면 즉시 재연결 시도
+    lifecyclePort.onDisconnect.addListener(() => {
+      console.log("[Prism] Heartbeat disconnected. Reconnecting...");
+      lifecyclePort = null;
+      setTimeout(connectHeartbeat, 1000);
+    });
+
+    // 현재 탭 ID가 있다면 등록
+    if (targetTabId || currentTabId) {
+      const tabId = targetTabId ? Number(targetTabId) : currentTabId;
+      lifecyclePort.postMessage({ tabId });
+    }
+  } catch (e) {
+    console.warn("[Prism] Failed to connect heartbeat:", e);
+  }
 }
+
+connectHeartbeat();
 
 function notifyPanelStatus(open) {
   const finalTabId = targetTabId ? Number(targetTabId) : currentTabId;
@@ -1037,9 +1110,9 @@ function notifyPanelStatus(open) {
       try {
         lifecyclePort.postMessage({ tabId: finalTabId });
       } catch (e) {
-        // 연결이 끊겼다면 재연결 시도
-        lifecyclePort = chrome.runtime.connect({ name: "prism-heartbeat" });
-        lifecyclePort.postMessage({ tabId: finalTabId });
+        // 포트 객체는 있지만 연결이 죽은 경우
+        lifecyclePort = null;
+        connectHeartbeat();
       }
     }
   }

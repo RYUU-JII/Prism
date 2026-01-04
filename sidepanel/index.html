@@ -3,9 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #f3efe6;
+      }
+    </style>
     <link rel="stylesheet" href="theme.css" />
-    <script src="vendor/html2canvas.min.js"></script>
-    <script src="vendor/tailwindcss.js"></script>
+    <script src="vendor/html2canvas.min.js" defer></script>
+    <script src="vendor/tailwindcss.js" defer></script>
   </head>
   <body class="glass-theme">
     <div class="panel-shell">
@@ -66,6 +74,6 @@
         </button>
       </footer>
     </div>
-    <script src="renderer.js"></script>
+    <script src="renderer.js" defer></script>
   </body>
 </html>

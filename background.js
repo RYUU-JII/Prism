@@ -68,11 +68,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.runtime.sendMessage({ type: "PRISM_RENDER", tabId, ...payload }, () => {
       const err = chrome.runtime?.lastError;
       if (err) {
-        // 렌더러가 없으면 패널이 닫힌 것임
-        panelOpenByTab.set(tabId, false);
-        sendResponse({ ok: true, open: false });
+        // 메시지 전송 실패 시, Heartbeat로 유지되는 상태를 확인 (Fallback)
+        const isOpen = isPanelOpen(tabId);
+        if (!isOpen) panelOpenByTab.set(tabId, false);
+        sendResponse({ ok: true, open: isOpen });
       } else {
-        // 성공적으로 전달되면 패널이 열려있는 것임
+        // 메시지 전송 성공 시 확실히 열림
         panelOpenByTab.set(tabId, true);
         sendResponse({ ok: true, open: true });
       }
@@ -179,6 +180,8 @@ chrome.runtime.onConnect.addListener((port) => {
     port.onMessage.addListener((msg) => {
       if (msg.tabId) {
         ownerTabId = msg.tabId;
+        // [수정] Heartbeat가 살아있다면 해당 탭의 패널은 확실히 열려있는 상태임
+        panelOpenByTab.set(ownerTabId, true);
         // console.log(`[Prism Heartbeat] Connected to Tab ${ownerTabId}`);
       }
     });
