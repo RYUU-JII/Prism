@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Prism",
   "description": "Paste HTML. Open the sidebar. See it live.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "permissions": ["sidePanel", "storage", "activeTab", "downloads"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },

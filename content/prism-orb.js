@@ -74,19 +74,41 @@ function detectKind(code) {
 function normalizeClipboard(text) { return (text || "").trim(); }
 
 function detectTheme() {
-  // ... (기존과 동일)
   try {
-    if (document.documentElement.classList.contains("dark")) return "dark";
-    if (document.body?.classList?.contains("dark")) return "dark";
-    const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    if (prefersDark) return "dark";
-    const bg = window.getComputedStyle(document.body).backgroundColor;
-    const match = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-    if (match) {
-      const luminance = (0.299 * Number(match[1]) + 0.587 * Number(match[2]) + 0.114 * Number(match[3])) / 255;
+    const html = document.documentElement;
+    const body = document.body;
+
+    // 1. 명시적인 클래스나 data-theme 속성 확인 (가장 정확함)
+    const isDarkAttr = 
+      html.classList.contains("dark") || 
+      body?.classList?.contains("dark") ||
+      html.getAttribute("data-theme") === "dark" ||
+      body?.getAttribute("data-theme") === "dark" ||
+      html.style.colorScheme === "dark";
+    
+    if (isDarkAttr) return "dark";
+
+    // 2. 배경색 휘도(Luminance) 계산 로직
+    const getLuminance = (el) => {
+      if (!el) return null;
+      const bg = window.getComputedStyle(el).backgroundColor;
+      if (!bg || bg === "transparent" || bg === "rgba(0, 0, 0, 0)") return null;
+      
+      const rgb = bg.match(/\d+/g);
+      if (rgb && rgb.length >= 3) {
+        return (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255;
+      }
+      return null;
+    };
+
+    // body -> html 순서로 실제 배경색을 확인하여 테마 판별
+    const luminance = getLuminance(body) ?? getLuminance(html);
+    if (luminance !== null) {
       return luminance < 0.5 ? "dark" : "light";
     }
   } catch (err) {}
+
+  // 3. 모든 감지 실패 시 기본값은 라이트 모드
   return "light";
 }
 
