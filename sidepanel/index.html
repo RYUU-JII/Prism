@@ -25,7 +25,7 @@
             id="open-window-btn"
             type="button"
             aria-label="Open in window"
-            title="Open in window"
+            data-tooltip="Open in window"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path
@@ -35,17 +35,35 @@
           </button>
         </div>
         <div class="panel-shell__actions">
-          <button class="panel-shell__action" id="save-html-btn" type="button" aria-label="Save HTML">
+          <button
+            class="panel-shell__action"
+            id="save-html-btn"
+            type="button"
+            aria-label="Save HTML"
+            data-tooltip="Save HTML"
+          >
             <span>HTML</span>
           </button>
-          <button class="panel-shell__action" id="snapshot-btn" type="button" aria-label="Save image">
+          <button
+            class="panel-shell__action"
+            id="snapshot-btn"
+            type="button"
+            aria-label="Save image"
+            data-tooltip="Save image"
+          >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path
                 d="M8.5 7.5h7l1.2 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2.3l1.2-2Zm3.5 3.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z"
               />
             </svg>
           </button>
-          <button class="panel-shell__action" id="copy-btn" type="button" aria-label="Copy image">
+          <button
+            class="panel-shell__action"
+            id="copy-btn"
+            type="button"
+            aria-label="Copy image"
+            data-tooltip="Copy image"
+          >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path
                 d="M8 7a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2Zm2 0v9a2 2 0 0 0 2 2h5v2H6V9h2Zm2 0h7v9h-7V7Z"
@@ -56,7 +74,13 @@
       </header>
       <div class="panel-shell__content">
         <div class="panel-shell__overlay">
-          <button class="panel-shell__action" id="picker-btn" type="button" aria-label="Pick element">
+          <button
+            class="panel-shell__action"
+            id="picker-btn"
+            type="button"
+            aria-label="Pick element"
+            data-tooltip="Pick element"
+          >
             <span>Pick</span>
           </button>
         </div>
@@ -66,10 +90,22 @@
         <div id="expert-editor"></div>
       </div>
       <footer class="panel-shell__footer">
-        <button class="panel-shell__action" id="expert-mode-btn" type="button" aria-label="Expert mode">
+        <button
+          class="panel-shell__action"
+          id="expert-mode-btn"
+          type="button"
+          aria-label="Expert mode"
+          data-tooltip="Expert mode"
+        >
           <span>Expert</span>
         </button>
-        <button class="panel-shell__action" id="expert-theme-btn" type="button" aria-label="Toggle editor theme">
+        <button
+          class="panel-shell__action"
+          id="expert-theme-btn"
+          type="button"
+          aria-label="Toggle editor theme"
+          data-tooltip="Toggle editor theme"
+        >
           <span>Dark</span>
         </button>
       </footer>

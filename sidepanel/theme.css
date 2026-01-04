@@ -109,6 +109,53 @@ body {
   position: relative;
 }
 
+#prism-capture-flash {
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    from 210deg at 85% 10%,
+    rgba(255, 140, 90, 0.9),
+    rgba(255, 215, 140, 0.75),
+    rgba(100, 210, 195, 0.7),
+    rgba(255, 140, 90, 0.9)
+  );
+  opacity: 0;
+  pointer-events: none;
+  z-index: 100;
+  border-radius: 22px;
+  mix-blend-mode: screen;
+  filter: blur(8px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+#prism-capture-flash.active {
+  animation: prism-capture-flash 0.7s ease-out;
+}
+
+#prism-toast {
+  position: absolute;
+  top: 56px;
+  right: 16px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  color: #2d2a25;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 5;
+  pointer-events: none;
+}
+
+#prism-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .panel-shell__bar {
   display: flex;
   align-items: center;
@@ -159,6 +206,7 @@ body {
   text-transform: uppercase;
   color: #4a3d34;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
 }
 
 .panel-shell__action svg {
@@ -174,6 +222,52 @@ body {
 .panel-shell__action:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.panel-shell__action[data-tooltip]::after,
+.panel-shell__action[data-tooltip]::before {
+  position: absolute;
+  left: 50%;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -6px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 10;
+}
+
+.panel-shell__action[data-tooltip]::after {
+  content: attr(data-tooltip);
+  top: calc(100% + 8px);
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  white-space: nowrap;
+  color: #2d2a25;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.panel-shell__action[data-tooltip]::before {
+  content: "";
+  top: calc(100% + 2px);
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-left: none;
+  border-top: none;
+  transform: translate(-50%, 2px) rotate(45deg);
+}
+
+.panel-shell__action:hover::after,
+.panel-shell__action:hover::before,
+.panel-shell__action:focus-visible::after,
+.panel-shell__action:focus-visible::before {
+  opacity: 1;
+  transform: translate(-50%, 10px);
 }
 
 .panel-shell__action.active {
@@ -275,6 +369,7 @@ body::after {
   backdrop-filter: blur(22px);
   box-shadow: 0 18px 45px var(--shadow);
   overflow: hidden;
+  animation: panel-slide-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 .panel__header {
@@ -440,6 +535,31 @@ body[data-theme="dark"] .hint__title {
   100% {
     opacity: 0;
     transform: translateX(35%) rotate(18deg);
+  }
+}
+
+@keyframes prism-capture-flash {
+  0% {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+  35% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@keyframes panel-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateX(20px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
   }
 }
 
