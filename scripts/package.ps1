@@ -1,0 +1,82 @@
+param(
+  [string]$OutputDir = "dist"
+)
+
+$ErrorActionPreference = "Stop"
+
+function Write-Info([string]$Message) {
+  Write-Host "[Prism] $Message"
+}
+
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ManifestPath = Join-Path $ProjectRoot "manifest.json"
+
+if (!(Test-Path $ManifestPath)) {
+  throw "manifest.json not found at: $ManifestPath"
+}
+
+$manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
+$version = if ($manifest.version) { [string]$manifest.version } else { "0.0.0" }
+$nameSafe = (($manifest.name ?? "Prism") -replace "[^a-zA-Z0-9._-]", "-")
+
+$DistDir = Join-Path $ProjectRoot $OutputDir
+$StagingDir = Join-Path $DistDir "_staging"
+$ZipPath = Join-Path $DistDir ("{0}-{1}.zip" -f $nameSafe, $version)
+
+$excludeDirNames = @(
+  ".git",
+  ".github",
+  ".vscode",
+  ".codemirror-build",
+  "node_modules",
+  $OutputDir,
+  "scripts"
+)
+
+$excludeFileNames = @(
+  ".DS_Store",
+  "Thumbs.db"
+)
+
+$excludeExtensions = @(
+  ".log"
+)
+
+Write-Info "Packaging extension..."
+Write-Info "Root: $ProjectRoot"
+Write-Info "Version: $version"
+
+New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
+if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
+New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
+
+$files = Get-ChildItem -Path $ProjectRoot -Recurse -File -Force | Where-Object {
+  $full = $_.FullName
+  $rel = $full.Substring($ProjectRoot.Length).TrimStart("\", "/")
+
+  foreach ($dirName in $excludeDirNames) {
+    if ($rel -match ("(^|[\\/]){0}([\\/]|$)" -f [regex]::Escape($dirName))) { return $false }
+  }
+
+  if ($excludeFileNames -contains $_.Name) { return $false }
+  if ($excludeExtensions -contains $_.Extension) { return $false }
+
+  return $true
+}
+
+foreach ($file in $files) {
+  $rel = $file.FullName.Substring($ProjectRoot.Length).TrimStart("\", "/")
+  $dest = Join-Path $StagingDir $rel
+  $destDir = Split-Path -Parent $dest
+  New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+  Copy-Item -Force -LiteralPath $file.FullName -Destination $dest
+}
+
+if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
+Compress-Archive -Path (Join-Path $StagingDir "*") -DestinationPath $ZipPath -Force
+
+Remove-Item -Recurse -Force $StagingDir
+
+Write-Info "Done."
+Write-Info "Output: $ZipPath"
+

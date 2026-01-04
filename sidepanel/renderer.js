@@ -99,9 +99,17 @@ if (storedTheme === "light" || storedTheme === "dark") {
 
 const urlParams = new URLSearchParams(window.location.search);
 const targetTabId = urlParams.get("tabId");
+const windowHint = document.getElementById("window-hint");
 
 const scriptLoadCache = new Map();
 const styleLoadCache = new Map();
+
+if (windowHint && targetTabId) {
+  windowHint.classList.add("is-visible");
+  window.setTimeout(() => {
+    windowHint.classList.remove("is-visible");
+  }, 5000);
+}
 
 /**
  * 상대 경로를 절대 경로로 변환하고 Base64로 바꿉니다.
