@@ -6,11 +6,15 @@ const copyBtn = document.getElementById("copy-btn");
 const saveHtmlBtn = document.getElementById("save-html-btn");
 const openWindowBtn = document.getElementById("open-window-btn");
 const panelShell = document.querySelector(".panel-shell");
+const panelContent = document.querySelector(".panel-shell__content");
 const expertModeBtn = document.getElementById("expert-mode-btn");
 const expertThemeBtn = document.getElementById("expert-theme-btn");
 const pickerBtn = document.getElementById("picker-btn");
 const expertEditorContainer = document.getElementById("expert-editor-container");
 const expertEditorMount = document.getElementById("expert-editor");
+
+const ENABLE_EXPERT_MODE = false;
+const ENABLE_PICKER = false;
 
 let pendingPayload = null;
 let viewerReady = false;
@@ -24,6 +28,69 @@ let expertTheme = "dark";
 let pickerActive = false;
 let pendingPickerToggle = false;
 let editorInitPromise = null;
+let lastRenderKey = "";
+let hasRenderedOnce = false;
+let toastTimer = null;
+let toastEl = null;
+let flashEl = null;
+let snapshotCooldownUntil = 0;
+
+const SNAPSHOT_COOLDOWN_MS = 900;
+
+if (!ENABLE_EXPERT_MODE) {
+  document.body.classList.add("prism-no-expert");
+  if (expertModeBtn) expertModeBtn.disabled = true;
+  if (expertThemeBtn) expertThemeBtn.disabled = true;
+  if (expertEditorContainer) expertEditorContainer.setAttribute("aria-hidden", "true");
+  expertMode = false;
+}
+
+if (!ENABLE_PICKER) {
+  document.body.classList.add("prism-no-picker");
+  if (pickerBtn) pickerBtn.disabled = true;
+  pickerActive = false;
+  pendingPickerToggle = false;
+}
+
+function ensureToast() {
+  if (toastEl || !panelShell) return toastEl;
+  const el = document.createElement("div");
+  el.id = "prism-toast";
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+  panelShell.appendChild(el);
+  toastEl = el;
+  return toastEl;
+}
+
+function ensureFlash() {
+  if (flashEl || !panelShell) return flashEl;
+  const el = document.createElement("div");
+  el.id = "prism-capture-flash";
+  panelShell.appendChild(el);
+  flashEl = el;
+  return flashEl;
+}
+
+function showToast(message) {
+  const el = ensureToast();
+  if (!el) return;
+  el.textContent = message;
+  el.classList.add("is-visible");
+  if (toastTimer) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    el.classList.remove("is-visible");
+    toastTimer = null;
+  }, 2200);
+}
+
+function flashCapture() {
+  const el = ensureFlash();
+  if (!el) return;
+  el.classList.remove("active");
+  void el.offsetWidth;
+  el.classList.add("active");
+}
 
 const storedTheme = localStorage.getItem("prism-expert-theme");
 if (storedTheme === "light" || storedTheme === "dark") {
@@ -189,6 +256,7 @@ function getCodeMirrorBundle() {
 }
 
 function applyExpertThemeUI() {
+  if (!ENABLE_EXPERT_MODE) return;
   if (expertEditorContainer) {
     expertEditorContainer.dataset.theme = expertTheme;
   }
@@ -201,7 +269,15 @@ function applyExpertThemeUI() {
   }
 }
 
+function applyGlobalTheme(theme) {
+  if (!theme) return;
+  document.body.dataset.theme = theme;
+  expertTheme = theme;
+  applyExpertThemeUI();
+}
+
 function applyPickerUI() {
+  if (!ENABLE_PICKER) return;
   if (pickerBtn) {
     pickerBtn.classList.toggle("active", pickerActive);
     pickerBtn.setAttribute("aria-pressed", pickerActive ? "true" : "false");
@@ -209,6 +285,7 @@ function applyPickerUI() {
 }
 
 function updatePickerAvailability() {
+  if (!ENABLE_PICKER) return;
   const canPick = latestPayload?.language === "html";
   if (!pickerBtn) return;
   pickerBtn.disabled = !canPick;
@@ -221,6 +298,7 @@ function updatePickerAvailability() {
 }
 
 function sendPickerToggle() {
+  if (!ENABLE_PICKER) return;
   if (!viewerReady) {
     pendingPickerToggle = true;
     return;
@@ -413,6 +491,7 @@ async function performCaptureInParent(data) {
 
   let container = null;
   let stage = null;
+  let host = null;
   
   try {
     if (!data || !data.html) {
@@ -423,7 +502,20 @@ async function performCaptureInParent(data) {
     const VIRTUAL_WIDTH = 1280;
     const VIRTUAL_HEIGHT = Math.max(720, Math.ceil(Number(data.height) || 0));
 
-    // 컨테이너 생성
+    // 컨테이너 생성 (Shadow DOM으로 스타일 격리)
+    host = document.createElement("div");
+    host.id = "prism-capture-host";
+    host.style.cssText = `
+      position: fixed;
+      left: -10000px;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      pointer-events: none;
+      z-index: -9999;
+    `;
+    const shadowRoot = host.attachShadow({ mode: "open" });
+
     container = document.createElement("div");
     container.id = "prism-capture-root";
     container.className = (data.bodyClass || "").trim();
@@ -433,7 +525,6 @@ async function performCaptureInParent(data) {
       top: 0;
       width: ${VIRTUAL_WIDTH}px;
       height: ${VIRTUAL_HEIGHT}px;
-      z-index: -9999;
       pointer-events: none;
       box-sizing: border-box;
       contain: layout paint;
@@ -477,7 +568,8 @@ async function performCaptureInParent(data) {
     });
 
     container.appendChild(stage);
-    document.body.appendChild(container);
+    shadowRoot.appendChild(container);
+    document.body.appendChild(host);
 
     // [신규 기능 적용] 캡처 전 리소스 인라인화 실행
     console.info("[Prism] Inlining external resources to prevent CORS issues...");
@@ -542,7 +634,9 @@ async function performCaptureInParent(data) {
   } catch (err) {
     console.error("[Prism] Parent capture failed:", err);
   } finally {
-    if (container) {
+    if (host) {
+      host.remove();
+    } else if (container) {
       container.remove();
     }
   }
@@ -726,6 +820,14 @@ function fixRelativePaths(html, baseUrl) {
   });
 }
 
+function buildRenderKey(code, language, url, theme) {
+  if (!code) return "";
+  const kind = language && language !== "text" ? language : detectKind(code);
+  const source = normalizeSource(url);
+  const resolvedTheme = theme || "light";
+  return `${kind}::${resolvedTheme}::${source || ""}::${code}`;
+}
+
 function renderPayload(code, language, url, theme) {
   if (!code) {
     latestPayload = null;
@@ -746,11 +848,22 @@ function renderPayload(code, language, url, theme) {
 
 function updateViewer(code, language, url, theme) {
   if (!code) {
+    lastRenderKey = "";
+    hasRenderedOnce = false;
     renderPayload(code, language, url, theme);
     return;
   }
 
-  if (expertMode) {
+  applyGlobalTheme(theme);
+
+  const nextKey = buildRenderKey(code, language, url, theme);
+  if (hasRenderedOnce && nextKey === lastRenderKey) {
+    return;
+  }
+  lastRenderKey = nextKey;
+  hasRenderedOnce = true;
+
+  if (ENABLE_EXPERT_MODE && expertMode) {
     if (editorView) {
       setEditorContent(code);
       renderPayload(code, language, url, theme);
@@ -771,6 +884,10 @@ function updateViewer(code, language, url, theme) {
 }
 
 function setExpertMode(active, options = {}) {
+  if (!ENABLE_EXPERT_MODE) {
+    expertMode = false;
+    return;
+  }
   expertMode = Boolean(active);
   applyExpertThemeUI();
   if (expertEditorContainer) {
@@ -835,7 +952,7 @@ chrome.runtime.onMessage.addListener((message) => {
 if (openWindowBtn) {
   openWindowBtn.addEventListener("click", () => {
     if (!latestPayload?.code) {
-      alert("렌더링할 코드가 없습니다.");
+      alert("No code to render.");
       return;
     }
     const tabId = currentTabId ?? "_global";
@@ -855,13 +972,13 @@ if (openWindowBtn) {
   });
 }
 
-if (expertModeBtn) {
+if (expertModeBtn && ENABLE_EXPERT_MODE) {
   expertModeBtn.addEventListener("click", () => {
     setExpertMode(!expertMode);
   });
 }
 
-if (pickerBtn) {
+if (pickerBtn && ENABLE_PICKER) {
   pickerBtn.addEventListener("click", () => {
     if (pickerBtn.disabled) return;
     pickerActive = !pickerActive;
@@ -870,11 +987,11 @@ if (pickerBtn) {
   });
 }
 
-if (expertThemeBtn) {
+if (expertThemeBtn && ENABLE_EXPERT_MODE) {
   expertThemeBtn.addEventListener("click", () => {
-    expertTheme = expertTheme === "dark" ? "light" : "dark";
-    localStorage.setItem("prism-expert-theme", expertTheme);
-    applyExpertThemeUI();
+    const newTheme = expertTheme === "dark" ? "light" : "dark";
+    localStorage.setItem("prism-expert-theme", newTheme);
+    applyGlobalTheme(newTheme);
     if (editorView) {
       const code = editorView.state.doc.toString();
       editorView.destroy();
@@ -890,6 +1007,12 @@ if (expertThemeBtn) {
 if (snapshotBtn) {
   snapshotBtn.addEventListener("click", () => {
     if (!viewerReady) return;
+    if (pendingSnapshotAction || Date.now() < snapshotCooldownUntil) {
+      showToast("Processing... please wait.");
+      return;
+    }
+    flashCapture();
+    snapshotCooldownUntil = Date.now() + SNAPSHOT_COOLDOWN_MS;
     pendingSnapshotAction = "download";
     viewer.contentWindow.postMessage({ type: "PRISM_SNAPSHOT" }, "*");
   });
@@ -898,6 +1021,12 @@ if (snapshotBtn) {
 if (copyBtn) {
   copyBtn.addEventListener("click", () => {
     if (!viewerReady) return;
+    if (pendingSnapshotAction || Date.now() < snapshotCooldownUntil) {
+      showToast("Processing... please wait.");
+      return;
+    }
+    flashCapture();
+    snapshotCooldownUntil = Date.now() + SNAPSHOT_COOLDOWN_MS;
     pendingSnapshotAction = "clipboard";
     viewer.contentWindow.postMessage({ type: "PRISM_SNAPSHOT" }, "*");
   });
@@ -949,6 +1078,7 @@ window.addEventListener("message", (event) => {
   }
 
   if (data.type === "PRISM_PICKER_SELECT") {
+    if (!ENABLE_PICKER) return;
     pickerActive = false;
     applyPickerUI();
     sendPickerToggle();
@@ -980,10 +1110,14 @@ window.addEventListener("message", (event) => {
     pendingSnapshotAction = null;
     if (action === "clipboard") {
       copyImageToClipboard(dataUrl).catch((err) => console.warn("[Prism] Clipboard copy failed:", err));
+      flashCapture();
+      showToast("Image copied to clipboard.");
     } else {
       const blob = dataUrlToBlob(dataUrl);
       const url = URL.createObjectURL(blob);
       chrome.downloads.download({ url, filename: "prism-snapshot.png", saveAs: true }, () => URL.revokeObjectURL(url));
+      flashCapture();
+      showToast("Image saved.");
     }
   }
 
@@ -999,11 +1133,12 @@ window.addEventListener("message", (event) => {
 
 viewer.addEventListener("load", () => {
   viewerReady = true;
+  viewer.classList.add("is-ready");
   if (pendingPayload) {
     postToSandbox(pendingPayload);
     pendingPayload = null;
   }
-  if (pendingPickerToggle) {
+  if (pendingPickerToggle && ENABLE_PICKER) {
     sendPickerToggle();
   }
 });
@@ -1014,11 +1149,28 @@ window.addEventListener("beforeunload", () => {
 
 let lifecyclePort = null;
 
-try {
-  lifecyclePort = chrome.runtime.connect({ name: "prism-heartbeat" });
-} catch (e) {
-  console.warn("[Prism] Failed to connect heartbeat:", e);
+function connectHeartbeat() {
+  try {
+    lifecyclePort = chrome.runtime.connect({ name: "prism-heartbeat" });
+    
+    // Service Worker가 재시작되어 연결이 끊기면 즉시 재연결 시도
+    lifecyclePort.onDisconnect.addListener(() => {
+      console.log("[Prism] Heartbeat disconnected. Reconnecting...");
+      lifecyclePort = null;
+      setTimeout(connectHeartbeat, 1000);
+    });
+
+    // 현재 탭 ID가 있다면 등록
+    if (targetTabId || currentTabId) {
+      const tabId = targetTabId ? Number(targetTabId) : currentTabId;
+      lifecyclePort.postMessage({ tabId });
+    }
+  } catch (e) {
+    console.warn("[Prism] Failed to connect heartbeat:", e);
+  }
 }
+
+connectHeartbeat();
 
 function notifyPanelStatus(open) {
   const finalTabId = targetTabId ? Number(targetTabId) : currentTabId;
@@ -1037,9 +1189,9 @@ function notifyPanelStatus(open) {
       try {
         lifecyclePort.postMessage({ tabId: finalTabId });
       } catch (e) {
-        // 연결이 끊겼다면 재연결 시도
-        lifecyclePort = chrome.runtime.connect({ name: "prism-heartbeat" });
-        lifecyclePort.postMessage({ tabId: finalTabId });
+        // 포트 객체는 있지만 연결이 죽은 경우
+        lifecyclePort = null;
+        connectHeartbeat();
       }
     }
   }

@@ -5,6 +5,8 @@ const ORB_LABEL = "Refract";
 let lastCode = "";
 let lastLanguage = "text";
 let hideTimer = null;
+let cleanupTimer = null; // 피드백 종료 타이머 추적용
+let lastCopyTime = 0; // 중복 복사 방지용 타임스탬프
 const SPY_SOURCE = "prism-clipboard";
 const GESTURE_WINDOW_MS = 4000;
 let lastUserGestureAt = 0;
@@ -137,6 +139,11 @@ safeSendMessage({ type: "PRISM_PANEL_STATUS_REQUEST" }, (resp) => {
 
 
 function handleCodeCopy(text) {
+  // [중복 방지] copy 이벤트와 spy.js가 동시에 트리거될 때 두 번 실행되는 것을 방지 (100ms 디바운스)
+  const now = Date.now();
+  if (now - lastCopyTime < 100) return;
+  lastCopyTime = now;
+
   const normalized = normalizeClipboard(text);
   const kind = detectKind(normalized);
   if (kind === "text") return;
@@ -144,47 +151,26 @@ function handleCodeCopy(text) {
   lastCode = normalized;
   lastLanguage = kind;
 
-  // 메시지를 보내기 전에 이미 로컬 변수 panelOpen이 true라면
-  // 굳이 응답을 기다리지 말고 즉시 전송 후 함수 종료 (Orb 안 띄움)
-  if (panelOpen) {
-    safeSendMessage({
-      type: "PRISM_RENDER_NOW",
-      code: lastCode,
-      language: lastLanguage,
-      theme: detectTheme()
-    });
-    destroyOrb(); // 혹시 떠있다면 제거
-    return;
-  }
-
-  // 패널이 닫혀있다고 판단될 때만 메시지 후 응답 확인
-  safeSendMessage(
-    {
-      type: "PRISM_RENDER_NOW",
-      code: lastCode,
-      language: lastLanguage,
-      theme: detectTheme()
-    },
-    (resp) => {
-      // 응답에서 온 open 상태도 확인 (이중 체크)
-      // 백그라운드 스크립트가 resp.open을 안 보내줄 수도 있으므로
-      // resp.open이 명확히 true일 때만 open으로 간주하거나, 기존 panelOpen 유지
-      const isOpenResponse = Boolean(resp?.open);
-      
-      // 로컬 상태 업데이트
-      if (isOpenResponse) {
-        panelOpen = true;
-      }
-
-      if (panelOpen) {
-        destroyOrb();
-        return;
-      }
-
+  // [Strict State Management]
+  // 상태를 묻지 않고 즉시 렌더링을 시도합니다.
+  // 백그라운드는 실제 패널에 메시지 전송을 시도하고, 그 성공 여부(open)를 반환합니다.
+  safeSendMessage({
+    type: "PRISM_RENDER_NOW",
+    code: lastCode,
+    language: lastLanguage,
+    theme: detectTheme()
+  }, (resp) => {
+    // 메시지가 패널에 도달했다면(open: true), 패널이 열려있는 것이므로 오브를 띄우지 않습니다.
+    if (resp && resp.open) {
+      panelOpen = true;
+      showFeedback(); // 패널이 열려있으면 버튼 대신 피드백 효과만 노출
+    } else {
+      // 도달 실패(open: false)라면 패널이 닫힌 것이므로 오브를 보여줍니다.
+      panelOpen = false;
       showOrb();
       scheduleHide();
     }
-  );
+  });
 }
 
 // ... (UI 로직은 ensureOrb, showOrb, hideOrb, destroyOrb, scheduleHide 기존 유지) ...
@@ -197,7 +183,6 @@ function ensureOrb() {
   orb.type = "button";
   orb.setAttribute("aria-label", "Open Prism side panel");
   orb.setAttribute("title", "Open Prism");
-  orb.innerHTML = `<span>${ORB_LABEL}</span>`;
 
   orb.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -222,9 +207,37 @@ function ensureOrb() {
 function showOrb() {
   if (panelOpen) return; // 패널 열려있으면 절대 실행 안 함
   const orb = ensureOrb();
+  orb.dataset.theme = detectTheme();
   requestAnimationFrame(() => {
     orb.classList.add(ORB_ACTIVE_CLASS);
   });
+}
+
+function showFeedback() {
+  const orb = ensureOrb();
+  
+  // 기존 타이머나 상태 초기화
+  if (hideTimer) clearTimeout(hideTimer);
+  if (cleanupTimer) clearTimeout(cleanupTimer);
+  
+  // 피드백 모드 클래스 추가 (CSS에서 클릭 방지 및 아이콘 숨김 처리)
+  orb.classList.add("prism-orb--feedback");
+  orb.dataset.theme = detectTheme();
+  
+  // [Animation Fix] 브라우저가 초기 상태(width: 0)를 인식하도록 강제 리플로우
+  void orb.offsetWidth;
+
+  requestAnimationFrame(() => {
+    orb.classList.add(ORB_ACTIVE_CLASS);
+  });
+
+  // 0.5초 동안만 빛을 보여주고 사라짐
+  hideTimer = setTimeout(() => {
+    orb.classList.remove(ORB_ACTIVE_CLASS);
+    cleanupTimer = setTimeout(() => {
+      destroyOrb(); // 페이드 아웃 후 완전히 제거
+    }, 500);
+  }, 500);
 }
 
 function hideOrb() {
@@ -238,6 +251,10 @@ function destroyOrb() {
   if (hideTimer) {
     window.clearTimeout(hideTimer);
     hideTimer = null;
+  }
+  if (cleanupTimer) {
+    window.clearTimeout(cleanupTimer);
+    cleanupTimer = null;
   }
   const orb = document.getElementById(ORB_ID);
   if (orb) {

@@ -23,6 +23,51 @@ body {
   overflow: hidden;
 }
 
+/* [다크 테마] 변수 재정의 및 스타일 오버라이드 */
+body[data-theme="dark"] {
+  --ink: #e0e0e0;
+  --muted: #9ca3af;
+  --glass: rgba(30, 30, 33, 0.85);
+  --glass-strong: rgba(40, 40, 45, 0.95);
+  --border: rgba(255, 255, 255, 0.1);
+  --shadow: rgba(0, 0, 0, 0.5);
+  background: radial-gradient(circle at 15% 20%, #1a1a1a 0%, #121212 45%, #050505 100%);
+}
+
+body[data-theme="dark"] #viewer {
+  background: #1e1e1e;
+  border-color: var(--border);
+}
+
+body[data-theme="dark"] .panel-shell__bar,
+body[data-theme="dark"] .panel-shell__footer {
+  background: rgba(45, 45, 45, 0.8);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+body[data-theme="dark"] .panel-shell__action {
+  background: rgba(60, 60, 60, 0.9);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #e0e0e0;
+}
+
+body[data-theme="dark"] .panel-shell__action svg {
+  fill: #e0e0e0;
+}
+
+body[data-theme="dark"] .panel-shell__action:hover {
+  background: rgba(80, 80, 80, 1);
+}
+
+body[data-theme="dark"] .panel-shell__action.active {
+  box-shadow: 0 0 0 1px rgba(79, 210, 195, 0.6), 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+body[data-theme="dark"] .panel-shell__action:disabled {
+  opacity: 0.3;
+  background: rgba(60, 60, 60, 0.5);
+}
+
 body.glass-theme {
   display: flex;
   padding: 16px;
@@ -62,6 +107,53 @@ body {
   min-height: 0;
   display: flex;
   position: relative;
+}
+
+#prism-capture-flash {
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    from 210deg at 85% 10%,
+    rgba(255, 140, 90, 0.9),
+    rgba(255, 215, 140, 0.75),
+    rgba(100, 210, 195, 0.7),
+    rgba(255, 140, 90, 0.9)
+  );
+  opacity: 0;
+  pointer-events: none;
+  z-index: 100;
+  border-radius: 22px;
+  mix-blend-mode: screen;
+  filter: blur(8px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+#prism-capture-flash.active {
+  animation: prism-capture-flash 0.7s ease-out;
+}
+
+#prism-toast {
+  position: absolute;
+  top: 56px;
+  right: 16px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  color: #2d2a25;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 5;
+  pointer-events: none;
+}
+
+#prism-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .panel-shell__bar {
@@ -114,6 +206,7 @@ body {
   text-transform: uppercase;
   color: #4a3d34;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
 }
 
 .panel-shell__action svg {
@@ -129,6 +222,52 @@ body {
 .panel-shell__action:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+.panel-shell__action[data-tooltip]::after,
+.panel-shell__action[data-tooltip]::before {
+  position: absolute;
+  left: 50%;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -6px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 10;
+}
+
+.panel-shell__action[data-tooltip]::after {
+  content: attr(data-tooltip);
+  top: calc(100% + 8px);
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  white-space: nowrap;
+  color: #2d2a25;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.panel-shell__action[data-tooltip]::before {
+  content: "";
+  top: calc(100% + 2px);
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-left: none;
+  border-top: none;
+  transform: translate(-50%, 2px) rotate(45deg);
+}
+
+.panel-shell__action:hover::after,
+.panel-shell__action:hover::before,
+.panel-shell__action:focus-visible::after,
+.panel-shell__action:focus-visible::before {
+  opacity: 1;
+  transform: translate(-50%, 10px);
 }
 
 .panel-shell__action.active {
@@ -151,6 +290,10 @@ body {
   align-items: center;
   gap: 8px;
   pointer-events: auto;
+}
+
+body.prism-no-picker .panel-shell__overlay {
+  display: none;
 }
 
 .panel-shell__overlay .panel-shell__action {
@@ -180,6 +323,11 @@ body {
   position: sticky;
   bottom: 0;
   z-index: 2;
+}
+
+body.prism-no-expert #expert-editor-container,
+body.prism-no-expert .panel-shell__footer {
+  display: none;
 }
 
 body::before,
@@ -221,6 +369,7 @@ body::after {
   backdrop-filter: blur(22px);
   box-shadow: 0 18px 45px var(--shadow);
   overflow: hidden;
+  animation: panel-slide-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 .panel__header {
@@ -231,6 +380,11 @@ body::after {
   gap: 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.45);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.35));
+}
+
+body[data-theme="dark"] .panel__header {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  border-bottom-color: rgba(255, 255, 255, 0.1);
 }
 
 .brand {
@@ -288,6 +442,12 @@ body::after {
   color: #2b2b2b;
 }
 
+body[data-theme="dark"] .status {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #e0e0e0;
+}
+
 .panel__stage {
   flex: 1;
   display: flex;
@@ -304,6 +464,11 @@ body::after {
   border: 1px solid rgba(255, 255, 255, 0.45);
   background: rgba(12, 14, 20, 0.08);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 12px 26px rgba(0, 0, 0, 0.12);
+}
+
+body[data-theme="dark"] .stage__frame {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .refraction {
@@ -338,11 +503,21 @@ body::after {
   color: var(--muted);
 }
 
+body[data-theme="dark"] .hint {
+  background: rgba(45, 45, 45, 0.8);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #a0a0a0;
+}
+
 .hint__title {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.16em;
   color: #2d2a25;
+}
+
+body[data-theme="dark"] .hint__title {
+  color: #ffffff;
 }
 
 .hint__text {
@@ -360,6 +535,31 @@ body::after {
   100% {
     opacity: 0;
     transform: translateX(35%) rotate(18deg);
+  }
+}
+
+@keyframes prism-capture-flash {
+  0% {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+  35% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+@keyframes panel-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateX(20px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
   }
 }
 
