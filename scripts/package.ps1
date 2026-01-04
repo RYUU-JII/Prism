@@ -17,7 +17,9 @@ if (!(Test-Path $ManifestPath)) {
 
 $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
 $version = if ($manifest.version) { [string]$manifest.version } else { "0.0.0" }
-$nameSafe = (($manifest.name ?? "Prism") -replace "[^a-zA-Z0-9._-]", "-")
+$nameSafe = $manifest.name
+if (-not $nameSafe) { $nameSafe = "Prism" }
+$nameSafe = ($nameSafe -replace "[^a-zA-Z0-9._-]", "-")
 
 $DistDir = Join-Path $ProjectRoot $OutputDir
 $StagingDir = Join-Path $DistDir "_staging"
@@ -50,6 +52,25 @@ Write-Info "Packaging extension..."
 Write-Info "Root: $ProjectRoot"
 Write-Info "Version: $version"
 
+Write-Info "Building Tailwind CSS..."
+$sidepanelDir = Join-Path $ProjectRoot "sidepanel"
+$tailwindInput = Join-Path $sidepanelDir "tailwind.input.css"
+$tailwindConfig = Join-Path $sidepanelDir "tailwind.config.js"
+if (Test-Path $sidepanelDir) {
+  if ((Test-Path $tailwindInput) -and (Test-Path $tailwindConfig)) {
+    Push-Location $sidepanelDir
+    try {
+      npm run tailwind:build
+    } finally {
+      Pop-Location
+    }
+  } else {
+    Write-Info "Skipped Tailwind build (missing tailwind.input.css or tailwind.config.js)."
+  }
+} else {
+  Write-Info "Skipped Tailwind build (sidepanel directory not found)."
+}
+
 New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
 New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
@@ -76,7 +97,7 @@ foreach ($file in $files) {
   Copy-Item -Force -LiteralPath $file.FullName -Destination $dest
 
   # Remove console.log statements from JavaScript files for production build
-  if ($file.Extension -eq ".js") {
+  if ($file.Extension -eq ".js" -and $rel -notmatch '(^|[\\/])vendor([\\/]|$)') {
     $content = Get-Content -LiteralPath $dest -Raw
     # Regex: Case-insensitive, matches console.log/info/debug(...) including multiline and optional semicolon
     $minified = [regex]::Replace($content, "(?si)\bconsole\.(log|info|debug)\s*\(.*?\);?", "")

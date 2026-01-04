@@ -43,6 +43,7 @@
       /* 다크모드 대응 */
       .dark #prism-root { background: #111; color: #fff; }
     </style>
+    <link rel="stylesheet" href="tailwind.css" />
   </head>
   <body>
     <div id="prism-root">
@@ -65,7 +66,6 @@
 
       // 라이브러리 경로 정의
       const sources = {
-        tailwind: "vendor/tailwindcss.js",
         babel: "vendor/babel.min.js",
         react: "vendor/react.production.min.js",
         reactDom: "vendor/react-dom.production.min.js",
@@ -112,7 +112,7 @@
         try {
           if ((code || "").length > MAX_BABEL_CHARS) throw new Error("Code is too large.");
           
-          await loadLibraries(["tailwind", "react", "reactDom", "babel"]);
+          await loadLibraries(["react", "reactDom", "babel"]);
           if (activeReactRoot) { activeReactRoot.unmount(); activeReactRoot = null; }
           
           root.innerHTML = "";
@@ -326,7 +326,7 @@
         
         frame.srcdoc = `<!DOCTYPE html><html class="${theme === "dark" ? "dark" : ""}">
           <head>
-            <script src="vendor/tailwindcss.js"><\/script>
+            <link rel="stylesheet" href="tailwind.css" />
             ${snapshotBridge}
           </head>
           <body>${code}</body></html>`;

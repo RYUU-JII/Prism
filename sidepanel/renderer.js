@@ -571,9 +571,7 @@ async function performCaptureInParent(data) {
     // 스타일 및 Tailwind, 라이브러리 로드
     await loadStyleOnce("sidepanel/theme.css").catch(() => {});
     if (data.html.includes("class=")) {
-      window.tailwind = window.tailwind || {};
-      window.tailwind.config = window.tailwind.config || { darkMode: "class" };
-      await loadScriptOnce("sidepanel/vendor/tailwindcss.js");
+      await loadStyleOnce("sidepanel/tailwind.css").catch(() => {});
     }
 
     await loadScriptOnce("sidepanel/vendor/modern-screenshot.js");

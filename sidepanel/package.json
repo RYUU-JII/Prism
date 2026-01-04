@@ -4,7 +4,9 @@
   "description": "",
   "main": "renderer.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "tailwind:watch": "tailwindcss -i ./tailwind.input.css -o ./tailwind.css --watch",
+    "tailwind:build": "tailwindcss -i ./tailwind.input.css -o ./tailwind.css --minify"
   },
   "keywords": [],
   "author": "",
@@ -12,5 +14,9 @@
   "type": "commonjs",
   "dependencies": {
     "codemirror": "^6.0.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.18",
+    "tailwindcss": "^4.1.18"
   }
 }
