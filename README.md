@@ -9,18 +9,21 @@ Prism is a Chrome Extension (Manifest V3) that renders copied AI-generated HTML/
 - Snapshot tools: export HTML, save PNG, copy PNG to clipboard
 - “Open in window” for a full-page preview (Alt + Left to go back)
 
-## How It Works
+## Installation
 
-- **Content script (MAIN world)** hooks clipboard writes when a user clicks a site’s “Copy” button.
-- The **Prism Orb** appears when renderable code is copied (and the panel is closed).
-- The **Side Panel** hosts a sandboxed iframe that renders the code safely.
+### For Users (Quick Install)
+1. Go to the Releases page.
+2. Download the latest `Prism-x.x.x.zip` file.
+3. Unzip the file to a permanent folder.
+4. Open Chrome and go to `chrome://extensions`.
+5. Enable **Developer mode** (top right).
+6. Click **Load unpacked** and select the unzipped folder.
 
-## Install (Developer Mode)
-
-1. Open `chrome://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked**
-4. Select the project folder (`Prism/`)
+### For Developers
+1. Clone this repository: `git clone https://github.com/YOUR_USERNAME/Prism.git`
+2. Open `chrome://extensions`.
+3. Enable **Developer mode**.
+4. Click **Load unpacked** and select the `Prism` folder.
 
 ## Usage
 

@@ -200,13 +200,6 @@ function returnToSourceTab() {
 
 if (targetTabId) {
   window.addEventListener("mousedown", (event) => {
-    console.log("[Prism] mousedown:", {
-      button: event.button,
-      buttons: event.buttons,
-      altKey: event.altKey,
-      ctrlKey: event.ctrlKey,
-      shiftKey: event.shiftKey
-    });
     if (event.button === 4) {
       returnToSourceTab();
     }
@@ -312,7 +305,6 @@ function sendPickerToggle() {
     return;
   }
   pendingPickerToggle = false;
-  console.log("[Prism] Picker toggle -> sandbox", { active: pickerActive });
   viewer.contentWindow.postMessage(
     { type: "PRISM_PICKER_TOGGLE", active: pickerActive },
     "*"
@@ -366,9 +358,6 @@ async function ensureExpertEditor() {
 
       const CM = getCodeMirrorBundle();
     
-      // 디버깅용: 실제로 무엇이 로드되었는지 콘솔에서 확인 가능합니다.
-      console.log("[Prism] CodeMirror Bundle Object:", CM);
-
       if (!CM || !CM.EditorView) {
         throw new Error("EditorView not found in bundle. Check if the bundle exports 'codemirror' or 'CodeMirrorBundle'.");
       }
@@ -489,10 +478,6 @@ function waitForPaint(frames = 2) {
  * modern-screenshot을 사용하여 데스크톱 뷰(1280px)를 강제하고 SVG 방식으로 렌더링합니다.
  */
 async function performCaptureInParent(data) {
-  console.info("[Prism] Desktop-view capture requested via modern-screenshot.", {
-    originalHeight: data?.height,
-    classes: data?.classes
-  });
   
   const action = pendingSnapshotAction || "download";
   pendingSnapshotAction = null;
@@ -580,7 +565,6 @@ async function performCaptureInParent(data) {
     document.body.appendChild(host);
 
     // [신규 기능 적용] 캡처 전 리소스 인라인화 실행
-    console.info("[Prism] Inlining external resources to prevent CORS issues...");
     const baseUrl = latestPayload?.url || ""; 
     await inlineAllResources(stage, baseUrl);
 
@@ -601,8 +585,6 @@ async function performCaptureInParent(data) {
     // 렌더링 안정화 대기 (인라인화 후 렌더링 시간 고려하여 약간 여유 둠)
     await waitForPaint(3);
     await new Promise((resolve) => setTimeout(resolve, 300));
-    
-    console.info("[Prism] Capture executing with modern-screenshot", { width: VIRTUAL_WIDTH, height: VIRTUAL_HEIGHT });
 
     if (!window.modernScreenshot || typeof window.modernScreenshot.domToPng !== "function") {
       throw new Error("modernScreenshot library (domToPng) not found.");
@@ -628,7 +610,6 @@ async function performCaptureInParent(data) {
     // 결과 처리 (클립보드 / 다운로드)
     if (action === "clipboard") {
       await copyImageToClipboard(dataUrl);
-      console.info("[Prism] Snapshot copied to clipboard.");
       return;
     }
     
@@ -637,7 +618,6 @@ async function performCaptureInParent(data) {
     chrome.downloads.download({ url, filename: "prism-desktop-snapshot.png", saveAs: true }, () => {
       URL.revokeObjectURL(url);
     });
-    console.info("[Prism] Snapshot download triggered.");
 
   } catch (err) {
     console.error("[Prism] Parent capture failed:", err);
@@ -1095,7 +1075,6 @@ window.addEventListener("message", (event) => {
   }
 
   if (data.type === "PRISM_DEVLOG") {
-    console.log("[Prism Sandbox]", data.stage || "unknown", data.payload || {});
     chrome.runtime.sendMessage({
       type: "PRISM_DEVLOG",
       source: "sandbox",
@@ -1135,7 +1114,6 @@ window.addEventListener("message", (event) => {
   }
 
   if (type === "PRISM_SNAPSHOT_STATUS") {
-    console.info("[Prism] Snapshot status:", stage || "unknown");
   }
 });
 
@@ -1163,7 +1141,6 @@ function connectHeartbeat() {
     
     // Service Worker가 재시작되어 연결이 끊기면 즉시 재연결 시도
     lifecyclePort.onDisconnect.addListener(() => {
-      console.log("[Prism] Heartbeat disconnected. Reconnecting...");
       lifecyclePort = null;
       setTimeout(connectHeartbeat, 1000);
     });

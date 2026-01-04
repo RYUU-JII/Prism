@@ -7,7 +7,6 @@ let lastLanguage = "text";
 let hideTimer = null;
 let cleanupTimer = null; // 피드백 종료 타이머 추적용
 let lastCopyTime = 0; // 중복 복사 방지용 타임스탬프
-const SPY_SOURCE = "prism-clipboard";
 const GESTURE_WINDOW_MS = 4000;
 let lastUserGestureAt = 0;
 let panelOpen = false;
@@ -92,12 +91,11 @@ function detectTheme() {
 }
 
 // ... (이벤트 리스너 부분 기존과 동일) ...
-window.addEventListener("message", (event) => {
-  if (event.source !== window) return;
-  const payload = event.data || {};
-  if (payload.source !== SPY_SOURCE || typeof payload.text !== "string") return;
+document.addEventListener("prism-clipboard-write", (event) => {
+  const text = event.detail;
+  if (!text || typeof text !== "string") return;
   if (Date.now() - lastUserGestureAt > GESTURE_WINDOW_MS) return;
-  handleCodeCopy(payload.text);
+  handleCodeCopy(text);
 });
 
 ["pointerdown", "keydown"].forEach((eventName) => {
@@ -119,7 +117,6 @@ document.addEventListener("copy", (event) => {
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "PRISM_PANEL_STATUS") {
-    console.log("[Prism] 패널 상태 변경 감지:", message.open);
     panelOpen = Boolean(message.open);
     
     // 패널이 닫혔다면(false), 다음 복사 시 오브가 뜰 준비를 함
