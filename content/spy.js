@@ -14,7 +14,7 @@
   let allowUntil = 0;
 
   function notify(text) {
-    window.postMessage({ source: "prism-clipboard", text }, "*");
+    document.dispatchEvent(new CustomEvent("prism-clipboard-write", { detail: text }));
   }
 
   function markGesture() {

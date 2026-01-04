@@ -342,13 +342,10 @@
 
       // [수정됨] 메인 캡처 함수: 데스크톱 너비(1280px) 전송
       function captureSnapshot() {
-        console.group("[Prism Sandbox] 캡처 데이터 추출 시작");
         const frame = root.querySelector("iframe");
         
         if (frame?.contentWindow) {
-          console.log("-> Iframe 모드 감지");
           frame.contentWindow.postMessage({ type: "PRISM_SNAPSHOT" }, "*");
-          console.groupEnd();
           return;
         }
 
@@ -408,17 +405,9 @@
             fontFamily: rootStyle.fontFamily || bodyStyle.fontFamily || docStyle.fontFamily || ""
           };
 
-          console.log("-> 추출 완료 (데스크톱 뷰 요청). 페이로드:", {
-            htmlLength: payload.html.length,
-            dims: `${payload.width}x${payload.height}`,
-            bg: payload.background
-          });
-
           window.parent.postMessage(payload, "*");
-          console.groupEnd();
         } catch (error) {
           console.error("[Prism Sandbox] 추출 실패:", error);
-          console.groupEnd();
         }
       }
 

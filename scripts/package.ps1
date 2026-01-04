@@ -35,7 +35,11 @@ $excludeDirNames = @(
 
 $excludeFileNames = @(
   ".DS_Store",
-  "Thumbs.db"
+  "Thumbs.db",
+  ".gitignore",
+  ".gitattributes",
+  "README.md",
+  "CONTRIBUTING.md"
 )
 
 $excludeExtensions = @(
@@ -70,6 +74,23 @@ foreach ($file in $files) {
   $destDir = Split-Path -Parent $dest
   New-Item -ItemType Directory -Force -Path $destDir | Out-Null
   Copy-Item -Force -LiteralPath $file.FullName -Destination $dest
+
+  # Remove console.log statements from JavaScript files for production build
+  if ($file.Extension -eq ".js") {
+    $content = Get-Content -LiteralPath $dest -Raw
+    # Regex: Case-insensitive, matches console.log/info/debug(...) including multiline and optional semicolon
+    $minified = [regex]::Replace($content, "(?si)\bconsole\.(log|info|debug)\s*\(.*?\);?", "")
+    
+    # Minification: Remove comments and collapse whitespace
+    # 1. Remove multi-line comments (/* ... */)
+    $minified = [regex]::Replace($minified, "(?s)/\*.*?\*/", "")
+    # 2. Remove single-line comments (// ...) - only at start of line or preceded by whitespace
+    $minified = [regex]::Replace($minified, "(?m)^\s*//.*|(?<=\s)//.*", "")
+    # 3. Trim each line and remove empty lines
+    $minified = ($minified -split '\r?\n' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }) -join "`n"
+
+    Set-Content -LiteralPath $dest -Value $minified -Encoding UTF8
+  }
 }
 
 if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
@@ -80,3 +101,5 @@ Remove-Item -Recurse -Force $StagingDir
 Write-Info "Done."
 Write-Info "Output: $ZipPath"
 
+# Open the output directory automatically
+Invoke-Item $DistDir

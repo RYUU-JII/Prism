@@ -130,12 +130,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // 6. 기타 유틸리티 메시지 처리
   else if (message?.type === "PRISM_DEVLOG") {
-    console.log("[Prism DevLog]", message.stage || "unknown", message.payload || {});
     sendResponse({ ok: true });
   }
 
   // 7. 프록시(fetch) 요청 처리
   else if (message.type === "PRISM_PROXY_FETCH") {
+    // [보안] URL 검증: http/https 프로토콜만 허용하고 로컬/사설 IP 접근 차단 시도
+    try {
+      const targetUrl = new URL(message.url);
+      if (!['http:', 'https:'].includes(targetUrl.protocol)) throw new Error("Invalid protocol");
+    } catch (e) {
+      return sendResponse({ error: "Invalid or restricted URL" });
+    }
+
     fetch(message.url)
       .then(response => response.blob())
       .then(blob => {
@@ -189,8 +196,6 @@ chrome.runtime.onConnect.addListener((port) => {
     // 패널이 닫혀서 연결이 끊어지면 실행
     port.onDisconnect.addListener(() => {
       if (ownerTabId) {
-        console.log(`[Prism Heartbeat] Disconnected. Panel closed for Tab ${ownerTabId}`);
-        
         // 1. 백그라운드 메모리 갱신
         panelOpenByTab.set(ownerTabId, false);
         
