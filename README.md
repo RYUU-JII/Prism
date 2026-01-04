@@ -11,23 +11,7 @@ Prism is a Chrome Extension (Manifest V3) that renders copied AI-generated HTML 
 
 ## Supported AI Platforms
 
-| Platform | URL |
-| :--- | :--- |
-| **ChatGPT** | `chatgpt.com`, `chat.openai.com` |
-| **Claude** | `claude.ai` |
-| **Gemini** | `gemini.google.com` |
-| **Perplexity** | `perplexity.ai` |
-| **DeepSeek** | `deepseek.com` |
-| **Grok** | `grok.com` |
-| **Meta AI** | `meta.ai` |
-| **v0.dev** | `v0.dev` |
-| **Bolt.new** | `bolt.new` |
-| **Lovable** | `lovable.dev` |
-| **Poe** | `poe.com` |
-| **Phind** | `phind.com` |
-| **Mistral** | `mistral.ai` |
-| **Qwen** | `qwenlm.ai` |
-| **Z.ai** | `z.ai` |
+Prism is designed to be compatible with a wide range of AI platforms. Please note that while we strive for universal support, it may not function perfectly in all environments or on every website due to varying security policies or code structures.
 
 ## Installation
 
@@ -60,7 +44,7 @@ Prism is a Chrome Extension (Manifest V3) that renders copied AI-generated HTML 
 - `storage`: small UI/state preferences
 - `activeTab`: communicate with the active tab
 - `downloads`: save exported HTML/PNG
-- `host_permissions`: restricted to supported AI platforms and common image hosting services (Unsplash, GitHub, etc.) to capture resources referenced by rendered HTML
+- `host_permissions: <all_urls>`: needed to run on AI sites and capture resources referenced by rendered HTML
 
 ## Project Structure
 
