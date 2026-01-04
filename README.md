@@ -9,6 +9,26 @@ Prism is a Chrome Extension (Manifest V3) that renders copied AI-generated HTML 
 - Snapshot tools: export HTML, save PNG, copy PNG to clipboard
 - “Open in window” for a full-page preview (Alt + Left to go back)
 
+## Supported AI Platforms
+
+| Platform | URL |
+| :--- | :--- |
+| **ChatGPT** | `chatgpt.com`, `chat.openai.com` |
+| **Claude** | `claude.ai` |
+| **Gemini** | `gemini.google.com` |
+| **Perplexity** | `perplexity.ai` |
+| **DeepSeek** | `deepseek.com` |
+| **Grok** | `grok.com` |
+| **Meta AI** | `meta.ai` |
+| **v0.dev** | `v0.dev` |
+| **Bolt.new** | `bolt.new` |
+| **Lovable** | `lovable.dev` |
+| **Poe** | `poe.com` |
+| **Phind** | `phind.com` |
+| **Mistral** | `mistral.ai` |
+| **Qwen** | `qwenlm.ai` |
+| **Z.ai** | `z.ai` |
+
 ## Installation
 
 ### For Users (Quick Install)
@@ -40,7 +60,7 @@ Prism is a Chrome Extension (Manifest V3) that renders copied AI-generated HTML 
 - `storage`: small UI/state preferences
 - `activeTab`: communicate with the active tab
 - `downloads`: save exported HTML/PNG
-- `host_permissions: <all_urls>`: needed to run on AI sites and capture resources referenced by rendered HTML
+- `host_permissions`: restricted to supported AI platforms and common image hosting services (Unsplash, GitHub, etc.) to capture resources referenced by rendered HTML
 
 ## Project Structure
 
@@ -70,4 +90,6 @@ Prism/
 
 ## Contributing
 
-This is a personal practice project and is not accepting contributions, issues, or pull requests at this time.
+We are currently preparing for the **v0.2.0 update** and would love to hear your feedback! 
+
+While we are not accepting Pull Requests at this time to maintain a consistent architectural vision, we highly encourage you to report bugs or suggest features via **Issues**. Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for more details on how to get involved.
