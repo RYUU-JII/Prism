@@ -1,6 +1,8 @@
 # Prism
 
-Prism is a Chrome Extension (Manifest V3) that renders copied AI-generated HTML code in a Side Panel for quick preview.
+**Copy. Prism. Render.**
+
+Prism is a Chrome Extension (Manifest V3) that instantly renders copied AI-generated code in your Side Panel for a seamless preview experience.
 
 ## Features
 
@@ -23,8 +25,8 @@ Prism is designed to be compatible with a wide range of AI platforms. Please not
 5. Enable **Developer mode** (top right).
 6. Click **Load unpacked** and select the unzipped folder.
 
-### For Developers
-1. Clone this repository: `git clone https://github.com/RYUU-JII/Prism.git`
+### For Developers (Local Testing & Learning)
+1. Clone this repository for personal experimentation: `git clone https://github.com/RYUU-JII/Prism.git`
 2. Open `chrome://extensions`.
 3. Enable **Developer mode**.
 4. Click **Load unpacked** and select the `Prism` folder.
