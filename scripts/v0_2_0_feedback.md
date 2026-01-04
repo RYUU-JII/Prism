@@ -1,22 +1,22 @@
 ---
 name: "🌈 v0.2.0 Feedback"
-about: "새로운 Glow Bar 디자인과 테마 동기화에 대한 의견을 들려주세요."
+about: "Share your thoughts on the new Glow Bar design and theme sync."
 title: "[v0.2.0 Feedback] "
 labels: feedback, v0.2.0
 ---
 
-**새로운 Glow Bar 디자인은 어떠신가요?**
-- [ ] 매우 만족
-- [ ] 만족
-- [ ] 보통
-- [ ] 개선 필요
+**How do you like the new Glow Bar design?**
+- [ ] Very satisfied
+- [ ] Satisfied
+- [ ] Neutral
+- [ ] Needs improvement
 
-**테마 동기화(라이트/다크 모드)가 잘 작동하나요?**
-내용을 적어주세요.
+**Does the theme synchronization (Light/Dark mode) work well for you?**
+Please describe your experience.
 
-**v0.2.0에서 가장 기대되는 개선 사항은 무엇인가요?**
+**What are you most excited about in the upcoming v0.2.0 update?**
 1. 
 2. 
 
-**기타 자유로운 의견**
-Prism을 더 멋지게 만들기 위한 의견을 자유롭게 남겨주세요!
+**Any other feedback?**
+Feel free to share any thoughts to help us make Prism better!

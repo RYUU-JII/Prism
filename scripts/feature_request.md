@@ -1,15 +1,15 @@
 ---
 name: "🚀 Feature Request"
-about: "Prism에 추가되었으면 하는 기능을 제안해주세요."
+about: "Suggest an idea for Prism."
 title: "[FEAT] "
 labels: enhancement
 ---
 
-**제안하는 기능**
-어떤 기능이 추가되길 원하시나요?
+**Is your feature request related to a problem? Please describe.**
+A clear and concise description of what the problem is.
 
-**이 기능이 필요한 이유**
-이 기능이 추가되면 어떤 점이 편리해질까요?
+**Describe the solution you'd like**
+A clear and concise description of what you want to happen.
 
-**추가 설명**
-참고할 만한 다른 도구나 구체적인 아이디어가 있다면 적어주세요.
+**Additional context**
+Add any other context or screenshots about the feature request here.

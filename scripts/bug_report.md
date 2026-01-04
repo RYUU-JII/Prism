@@ -1,20 +1,20 @@
 ---
 name: "🐛 Bug Report"
-about: "Prism 사용 중 발생한 버그를 알려주세요."
+about: "Report a bug to help us improve Prism."
 title: "[BUG] "
 labels: bug
 ---
 
-**버그 설명**
-어떤 문제가 발생했는지 명확하고 간결하게 설명해주세요.
+**Describe the bug**
+A clear and concise description of what the bug is.
 
-**재현 방법**
-1. 어떤 AI 사이트(예: ChatGPT, Claude)를 사용하셨나요?
-2. 어떤 코드를 복사하셨나요? (가능하다면 샘플 코드 첨부)
-3. Prism Orb(Glow Bar)가 나타났나요? 아니면 사이드바에서 문제가 생겼나요?
+**To Reproduce**
+1. Which AI platform were you using (e.g., ChatGPT, Claude)?
+2. What code did you copy? (Please provide a snippet if possible)
+3. Did the Glow Bar appear? Or did the issue occur in the side panel?
 
-**예상 결과**
-원래 어떻게 작동해야 한다고 생각하시나요?
+**Expected behavior**
+A clear and concise description of what you expected to happen.
 
-**스크린샷**
-문제 상황을 보여줄 수 있는 스크린샷이 있다면 첨부해주세요.
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
