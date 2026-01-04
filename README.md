@@ -18,8 +18,9 @@ Prism is designed to be compatible with a wide range of AI platforms. Please not
 ## Installation
 
 ### For Users (Quick Install)
-1. Go to the Releases page.
-2. Download the latest `Prism-x.x.x.zip` file.
+1. Go to the latest release download:
+   - https://github.com/RYUU-JII/Prism/releases/latest/download/Prism-latest.zip
+2. Download the `Prism-latest.zip` file.
 3. Unzip the file to a permanent folder.
 4. Open Chrome and go to `chrome://extensions`.
 5. Enable **Developer mode** (top right).
