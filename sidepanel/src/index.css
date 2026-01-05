@@ -1,3 +1,6 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 :root {
   --ink: #1c1b18;
   --muted: #5c584f;
