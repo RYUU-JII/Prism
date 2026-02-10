@@ -22,6 +22,16 @@ async function isPanelOpen(tabId) {
 }
 
 /**
+ * 어떤 탭이든 패널이 열려있는지 확인합니다.
+ * Chrome의 사이드패널은 탭을 전환해도 동일 인스턴스가 유지되므로,
+ * 특정 탭이 아닌 전체 상태를 확인해야 합니다.
+ */
+async function isAnyPanelOpen() {
+  const { panelOpenByTab = {} } = await chrome.storage.session.get("panelOpenByTab");
+  return Object.values(panelOpenByTab).some(v => v === true);
+}
+
+/**
  * 패널 상태를 업데이트합니다.
  */
 async function setPanelStatus(tabId, isOpen) {
@@ -85,20 +95,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     (async () => {
       await storeLatest(tabId, payload);
 
-      // 렌더러(사이드패널)로 메시지 전송 시도 
-      chrome.runtime.sendMessage({ type: "PRISM_RENDER", tabId, ...payload }, async () => {
-        const err = chrome.runtime?.lastError;
-        if (err) {
-          // 메시지 전송 실패 시, Heartbeat로 유지되는 상태를 확인 (Fallback)
-          const isOpen = await isPanelOpen(tabId);
-          if (!isOpen) await setPanelStatus(tabId, false);
-          sendResponse({ ok: true, open: isOpen });
-        } else {
-          // 메시지 전송 성공 시 확실히 열림
-          await setPanelStatus(tabId, true);
-          sendResponse({ ok: true, open: true });
-        }
-      });
+      // [수정] 탭 전환 시에도 패널이 열려있으면 메시지를 전달해야 함
+      // Chrome 사이드패널은 탭을 바꿔도 같은 인스턴스가 유지되므로
+      // 특정 탭이 아닌 "어떤 탭이든 열려있는지"를 확인
+      const isOpen = await isAnyPanelOpen();
+
+      if (isOpen) {
+        // 새 탭에서도 패널 상태를 등록 (이후 조회를 위해)
+        await setPanelStatus(tabId, true);
+
+        // 렌더링 메시지 전송 (탭 ID 포함 → 패널이 내부 tabId를 갱신함)
+        chrome.runtime.sendMessage({ type: "PRISM_RENDER", tabId, ...payload }, () => {
+          if (chrome.runtime?.lastError) { /* 메시지 전달 실패 - 무시 */ }
+        });
+      }
+
+      sendResponse({ ok: true, open: isOpen });
     })();
     return true; // 비동기 응답 처리
   }
@@ -117,7 +129,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         open: isOpen
       }).catch(() => { /* 탭이 이미 닫혔을 경우 무시 */ });
     })();
-    
+
     sendResponse({ ok: true });
     return true;
   }
@@ -141,7 +153,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
-  
+
   // 5-1. 패널에서 최신 데이터를 갱신 저장
   else if (message?.type === "PRISM_SET_LATEST") {
     (async () => {
@@ -198,7 +210,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.windows.update(tab.windowId, { focused: true }, () => {
           chrome.tabs.update(targetTabId, { active: true }, () => {
             if (chrome.sidePanel?.open) {
-              chrome.sidePanel.open({ tabId: targetTabId }).catch(() => {});
+              chrome.sidePanel.open({ tabId: targetTabId }).catch(() => { });
             }
           });
         });
@@ -226,12 +238,12 @@ chrome.runtime.onConnect.addListener((port) => {
     port.onDisconnect.addListener(() => {
       if (ownerTabId) {
         setPanelStatus(ownerTabId, false);
-        
+
         // 2. Content Script에 알림
         chrome.tabs.sendMessage(ownerTabId, {
           type: "PRISM_PANEL_STATUS",
           open: false
-        }).catch(() => {});
+        }).catch(() => { });
       }
     });
   }

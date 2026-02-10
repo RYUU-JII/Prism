@@ -450,14 +450,9 @@ function App() {
 
     const handleMessages = (message) => {
       if (message?.type === "PRISM_RENDER") {
-        if (
-          message.tabId !== undefined &&
-          currentTabIdRef.current !== null &&
-          currentTabIdRef.current !== undefined &&
-          message.tabId !== currentTabIdRef.current
-        ) {
-          return;
-        }
+        // [수정] 탭 ID가 달라도 항상 렌더링을 수행
+        // Chrome 사이드패널은 탭 전환 시에도 동일 인스턴스가 유지되므로
+        // 어떤 탭에서 온 메시지든 수용하고 내부 tabId를 갱신
         if (message.tabId !== undefined) {
           setTabId(message.tabId);
         }
@@ -649,9 +644,9 @@ function App() {
         >
           Alt + Left to go back
         </div>
-      <Viewer ref={viewerRef} onReady={handleViewerReady} containerClassName="prism-window__content" />
-    </div>
-  );
+        <Viewer ref={viewerRef} onReady={handleViewerReady} containerClassName="prism-window__content" />
+      </div>
+    );
   }
 
   return (
