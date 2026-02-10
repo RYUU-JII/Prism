@@ -1,34 +1,31 @@
 import React, { useEffect, forwardRef } from 'react';
 
-const Viewer = forwardRef(({ payload }, ref) => {
+const Viewer = forwardRef(({ onReady, containerClassName = "panel-shell__content" }, ref) => {
   useEffect(() => {
-    if (payload && ref.current) {
-      const viewer = ref.current;
-      const handleLoad = () => {
-        viewer.contentWindow.postMessage({ type: "RENDER", ...payload }, "*");
-      };
+    const viewer = ref.current;
+    if (!viewer) return undefined;
 
-      if (viewer.contentWindow.document.readyState === 'complete') {
-        handleLoad();
-      } else {
-        viewer.addEventListener('load', handleLoad, { once: true });
+    const handleLoad = () => {
+      if (typeof onReady === "function") {
+        onReady();
       }
+    };
 
-      return () => {
-        if (viewer) {
-          viewer.removeEventListener('load', handleLoad);
-        }
-      };
-    }
-  }, [payload, ref]);
+    viewer.addEventListener("load", handleLoad);
+    return () => {
+      viewer.removeEventListener("load", handleLoad);
+    };
+  }, [onReady, ref]);
 
   return (
-    <div className="panel-shell__content">
+    <div className={containerClassName}>
       <iframe
         ref={ref}
         id="viewer"
-        src="sandbox.html"
-        sandbox="allow-scripts"
+        src={chrome?.runtime?.getURL
+          ? chrome.runtime.getURL("sidepanel/sandbox.html")
+          : "sandbox.html"}
+        sandbox="allow-scripts allow-same-origin"
         className="w-full h-full border-0"
       ></iframe>
     </div>

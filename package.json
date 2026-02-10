@@ -1,0 +1,9 @@
+{
+  "name": "prism",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix sidepanel run build",
+    "tailwind:build": "npm --prefix sidepanel run tailwind:build",
+    "build:all": "npm --prefix sidepanel run tailwind:build && npm --prefix sidepanel run build"
+  }
+}

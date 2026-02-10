@@ -1,5 +1,8 @@
 // Utility functions for capturing screenshots.
 
+const scriptLoadCache = new Map();
+const styleLoadCache = new Map();
+
 async function toDataURL(url, baseUrl) {
   if (!url || url.startsWith("data:")) return url;
 
@@ -50,6 +53,63 @@ async function inlineAllResources(element, baseUrl) {
   }));
 }
 
+function loadScriptOnce(src, globalName) {
+  if (globalName && window[globalName]) return Promise.resolve(window[globalName]);
+  if (scriptLoadCache.has(src)) return scriptLoadCache.get(src);
+  const promise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = chrome.runtime.getURL(src);
+    script.async = true;
+    script.onload = () => resolve(globalName ? window[globalName] : true);
+    script.onerror = () => {
+      scriptLoadCache.delete(src);
+      reject(new Error(`Failed to load ${src}`));
+    };
+    document.head.appendChild(script);
+  });
+  scriptLoadCache.set(src, promise);
+  return promise;
+}
+
+function loadStyleOnce(href) {
+  if (styleLoadCache.has(href)) return styleLoadCache.get(href);
+  const existing = document.querySelector(`link[data-prism-style="${href}"]`);
+  if (existing) return Promise.resolve();
+  const promise = new Promise((resolve, reject) => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = chrome.runtime.getURL(href);
+    link.dataset.prismStyle = href;
+    link.onload = () => resolve();
+    link.onerror = () => reject(new Error(`Failed to load ${href}`));
+    document.head.appendChild(link);
+  });
+  styleLoadCache.set(href, promise);
+  return promise;
+}
+
+function applyInlineStyles(element, styles) {
+  if (!element || !styles) return;
+  Object.keys(styles).forEach((key) => {
+    element.style[key] = styles[key];
+  });
+}
+
+function waitForPaint(frames = 2) {
+  return new Promise((resolve) => {
+    let count = 0;
+    const tick = () => {
+      count += 1;
+      if (count >= frames) {
+        resolve();
+      } else {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
 function dataUrlToBlob(dataUrl) {
   const [header, data] = dataUrl.split(",");
   const mime = header.match(/:(.*?);/)[1] || "image/png";
@@ -61,64 +121,150 @@ function dataUrlToBlob(dataUrl) {
   return new Blob([bytes], { type: mime });
 }
 
-export async function performCaptureInParent(data, latestPayload, showToast) {
-  // This function needs html2canvas to be loaded.
-  // We will assume it's available on the window object for now.
-  if (!window.html2canvas) {
-    console.error("html2canvas is not loaded.");
-    showToast("Error: Snapshot library not found.");
+async function copyImageToClipboard(dataUrl, showToast) {
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    showToast("Clipboard API not available.");
     return;
   }
+  const blob = dataUrlToBlob(dataUrl);
+  await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+}
 
-  const host = document.createElement("div");
-  host.style.cssText = `position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; overflow: hidden;`;
-  document.body.appendChild(host);
-  const shadowRoot = host.attachShadow({ mode: 'open' });
+export async function performCaptureInParent(data, latestPayload, showToast) {
+  const action = data?.action || "download";
+  let host = null;
+  let container = null;
+  let stage = null;
 
-  const container = document.createElement('div');
-  shadowRoot.appendChild(container);
+  try {
+    if (!data || !data.html) {
+      throw new Error("No capture payload provided.");
+    }
 
-  container.innerHTML = `
-    <style>
-      @import url('${chrome.runtime.getURL('sidepanel/src/index.css')}');
-    </style>
-    <div id="capture-target" style="width:1280px; padding: 20px;">
-      ${data.html}
-    </div>
-  `;
+    const VIRTUAL_WIDTH = 1280;
+    const VIRTUAL_HEIGHT = Math.max(720, Math.ceil(Number(data.height) || 0));
 
-  const target = container.querySelector('#capture-target');
+    host = document.createElement("div");
+    host.id = "prism-capture-host";
+    host.style.cssText = `
+position: fixed;
+left: -10000px;
+top: 0;
+width: 1px;
+height: 1px;
+pointer-events: none;
+z-index: -9999;
+`;
 
-  await inlineAllResources(target, latestPayload?.url);
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    container = document.createElement("div");
+    container.id = "prism-capture-root";
+    container.className = (data.bodyClass || "").trim();
+    container.style.cssText = `
+position: fixed;
+left: -5000px;
+top: 0;
+width: ${VIRTUAL_WIDTH}px;
+height: ${VIRTUAL_HEIGHT}px;
+pointer-events: none;
+box-sizing: border-box;
+contain: layout paint;
+overflow: hidden;
+`;
+    applyInlineStyles(container, data.bodyStyles);
+    container.style.background = data.background || container.style.background || "#ffffff";
+    container.style.color = data.color || container.style.color || "#111111";
+    container.style.fontFamily = data.fontFamily || container.style.fontFamily || "inherit";
 
-  html2canvas(target, {
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: data.background || '#ffffff',
-      width: 1280,
-      windowWidth: 1280,
-  }).then(canvas => {
-      const dataUrl = canvas.toDataURL('image/png');
-      const action = data.action || 'download';
+    stage = document.createElement("div");
+    stage.id = "prism-root";
+    stage.className = (data.classes || "").trim();
+    stage.style.width = "100%";
+    stage.style.height = "100%";
+    stage.style.position = "relative";
+    stage.style.boxSizing = "border-box";
+    applyInlineStyles(stage, data.rootStyles);
+    stage.innerHTML = data.html;
 
-      if (action === 'clipboard') {
-          const blob = dataUrlToBlob(dataUrl);
-          navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
-              .then(() => showToast("Image copied to clipboard."))
-              .catch(err => showToast("Error copying image."));
-      } else {
-          const url = URL.createObjectURL(dataUrlToBlob(dataUrl));
-          chrome.downloads.download({
-              url,
-              filename: 'prism-snapshot.png',
-              saveAs: true,
-          }, () => URL.revokeObjectURL(url));
-          showToast("Image saved.");
+    stage.querySelectorAll("script").forEach((el) => el.remove());
+    stage.querySelectorAll("link[rel='stylesheet']").forEach((el) => el.remove());
+    stage.querySelectorAll("iframe, frame, object, embed").forEach((el) => {
+      const placeholder = document.createElement("div");
+      const rect = el.getBoundingClientRect();
+      placeholder.style.width = rect.width ? `${rect.width}px` : "100%";
+      placeholder.style.height = rect.height ? `${rect.height}px` : "150px";
+      placeholder.style.background = "#f3f4f6";
+      placeholder.style.border = "1px dashed #d1d5db";
+      placeholder.style.display = "flex";
+      placeholder.style.alignItems = "center";
+      placeholder.style.justifyContent = "center";
+      placeholder.style.color = "#9ca3af";
+      placeholder.style.fontSize = "12px";
+      placeholder.textContent = "External Content (Snapshot Unsupported)";
+      el.replaceWith(placeholder);
+    });
+
+    container.appendChild(stage);
+    shadowRoot.appendChild(container);
+    document.body.appendChild(host);
+
+    const baseUrl = latestPayload?.url || "";
+    await inlineAllResources(stage, baseUrl);
+    await loadStyleOnce("sidepanel/theme.css").catch(() => {});
+    if (data.html.includes("class=")) {
+      await loadStyleOnce("sidepanel/tailwind.css").catch(() => {});
+    }
+    await loadScriptOnce("sidepanel/vendor/modern-screenshot.js");
+
+    if (document.fonts && document.fonts.ready) {
+      await Promise.race([
+        document.fonts.ready,
+        new Promise((resolve) => setTimeout(resolve, 250))
+      ]);
+    }
+
+    await waitForPaint(3);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    if (!window.modernScreenshot || typeof window.modernScreenshot.domToPng !== "function") {
+      throw new Error("modernScreenshot library (domToPng) not found.");
+    }
+
+    const { domToPng } = window.modernScreenshot;
+    const dataUrl = await domToPng(stage, {
+      width: VIRTUAL_WIDTH,
+      height: VIRTUAL_HEIGHT,
+      scale: 2,
+      backgroundColor: data.background || "#ffffff",
+      style: {
+        transform: "scale(1)",
+        transformOrigin: "top left"
+      },
+      features: {
+        copyStyles: true,
       }
-      document.body.removeChild(host);
-  }).catch(error => {
-      console.error("Error during html2canvas capture:", error);
-      showToast("Error generating snapshot.");
-      document.body.removeChild(host);
-  });
+    });
+
+    if (action === "clipboard") {
+      await copyImageToClipboard(dataUrl, showToast);
+      showToast("Image copied to clipboard.");
+      return;
+    }
+
+    const blob = dataUrlToBlob(dataUrl);
+    const url = URL.createObjectURL(blob);
+    chrome.downloads.download({ url, filename: "prism-desktop-snapshot.png", saveAs: true }, () => {
+      URL.revokeObjectURL(url);
+    });
+    showToast("Image saved.");
+  } catch (err) {
+    console.error("[Prism] Parent capture failed:", err);
+    showToast("Error generating snapshot.");
+  } finally {
+    if (host) {
+      host.remove();
+    } else if (container) {
+      container.remove();
+    }
+  }
 }

@@ -1,0 +1,23 @@
+.prism-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 9999;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #121212;
+  color: #f2f2f2;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.prism-copy-btn:hover {
+  opacity: 1;
+  background: #1f1f1f;
+}
+
+pre {
+  position: relative;
+}

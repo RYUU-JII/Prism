@@ -3,11 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="window.css" />
+    <title>Prism Window</title>
   </head>
   <body>
-    <div id="window-hint" role="status" aria-live="polite">Alt + Left to go back</div>
-    <iframe id="viewer" src="sandbox.html" sandbox="allow-scripts"></iframe>
-    <script src="renderer.js"></script>
+    <script>
+      (function () {
+        const params = new URLSearchParams(window.location.search);
+        if (!params.has("mode")) params.set("mode", "window");
+        const target = chrome.runtime.getURL(`sidepanel/dist/index.html?${params.toString()}`);
+        window.location.replace(target);
+      })();
+    </script>
   </body>
 </html>

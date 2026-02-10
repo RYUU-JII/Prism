@@ -21,7 +21,7 @@
       "run_at": "document_idle"
     }
   ],
-  "side_panel": { "default_path": "sidepanel/dist/index.html" },
+  "side_panel": { "default_path": "sidepanel/index.html" },
   "sandbox": {
     "pages": ["sidepanel/sandbox.html"]
   },

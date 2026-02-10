@@ -1,9 +1,6 @@
 import React from 'react';
 
-const Header = ({ onSaveHtml, onSnapshot, onCopy }) => {
-  const handleOpenWindow = () => {
-    alert("This feature is being migrated.");
-  };
+const Header = ({ onSaveHtml, onSnapshot, onCopy, onOpenWindow }) => {
 
   return (
     <header className="panel-shell__bar">
@@ -14,7 +11,7 @@ const Header = ({ onSaveHtml, onSnapshot, onCopy }) => {
           type="button"
           aria-label="Open in window"
           data-tooltip="Open in window"
-          onClick={handleOpenWindow}
+          onClick={onOpenWindow}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path

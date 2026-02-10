@@ -8,6 +8,8 @@ const Footer = ({
   pickerActive,
   onPickerToggle,
   isPickerDisabled,
+  isExpertEnabled = true,
+  isPickerEnabled = true,
 }) => {
   return (
     <footer className="panel-shell__footer">
@@ -17,6 +19,7 @@ const Footer = ({
         aria-label="Expert mode"
         data-tooltip="Expert mode"
         onClick={onExpertModeToggle}
+        disabled={!isExpertEnabled}
       >
         <span>Expert</span>
       </button>
@@ -26,6 +29,7 @@ const Footer = ({
         aria-label="Toggle editor theme"
         data-tooltip="Toggle editor theme"
         onClick={onExpertThemeToggle}
+        disabled={!isExpertEnabled}
       >
         <span>{expertTheme === 'dark' ? 'Dark' : 'Light'}</span>
       </button>
@@ -35,7 +39,7 @@ const Footer = ({
         aria-label="Pick element"
         data-tooltip={isPickerDisabled ? "Element picker: HTML only" : "Pick element"}
         onClick={onPickerToggle}
-        disabled={isPickerDisabled}
+        disabled={!isPickerEnabled || isPickerDisabled}
       >
         <span>Pick</span>
       </button>

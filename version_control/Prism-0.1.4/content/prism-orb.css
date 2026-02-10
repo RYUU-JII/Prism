@@ -1,0 +1,97 @@
+#prism-orb {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 0; /* 기본 너비를 0으로 설정하여 사라질 때 오른쪽으로 수축되는 효과 구현 */
+  height: 100vh;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+  transform: none;
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  box-shadow: none;
+  /* Exit: 부드럽게 닫히며 사라짐 (Retract) */
+  transition: opacity 0.4s ease-in, width 0.4s cubic-bezier(0.5, 0, 0.75, 0);
+  z-index: 2147483647;
+}
+
+/* 배경 발광 효과 (Glow Bar) */
+#prism-orb::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%; /* 기본적으로 영역을 채우는 빛 */
+  background: linear-gradient(
+    to bottom,
+    #ffb3ba, #ffdfba, #ffffba, #baffc9, #bae1ff, #eecbff, #ffb3ba
+  );
+  mask-image: linear-gradient(to left, black 0%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to left, black 0%, transparent 100%);
+  filter: blur(12px);
+  opacity: 0.8;
+  pointer-events: none;
+  transition: width 0.3s ease, opacity 0.3s ease, filter 0.3s ease;
+}
+
+/* [라이트 테마] 흰 배경에서도 잘 보이도록 진하고 선명한 무지개색 적용 */
+#prism-orb[data-theme="light"]::before {
+  background: linear-gradient(
+    to bottom,
+    #ff3366, #ff9933, #ffcc00, #33cc33, #3399ff, #cc33ff, #ff3366
+  );
+  opacity: 0.9;
+  filter: blur(10px); /* 번짐을 살짝 줄여서 색상을 더 또렷하게 */
+}
+
+#prism-orb::after {
+  display: none;
+}
+
+#prism-orb.prism-orb--active {
+  width: 30px; /* 활성화 시 너비 확장 (빛이 나옴) */
+  opacity: 1;
+  pointer-events: auto;
+  animation: none;
+  /* Enter: 탄력 있게 튀어나옴 (쫀득한 느낌) */
+  transition: opacity 0.2s ease-out, width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#prism-orb.prism-orb--active:hover {
+  cursor: pointer;
+  width: 60px; /* 호버 영역을 적절한 수준으로 축소 */
+}
+
+/* 호버 시 효과: 빛이 넓어지고 버튼이 튀어나옴 */
+#prism-orb.prism-orb--active:hover::before {
+  width: 200%; /* 빛이 퍼지는 범위를 절제 */
+  opacity: 0.9;
+  filter: blur(15px);
+}
+
+/* [피드백 모드] 사이드바가 열려있을 때 데이터 수신 알림 */
+#prism-orb.prism-orb--active.prism-orb--feedback {
+  pointer-events: none; /* 클릭 불가 */
+  width: 18px; /* 피드백 모드도 1.5배 확대 */
+  /* Enter: 피드백 모드도 동일한 쫀득한 애니메이션 적용 */
+  transition: opacity 0.2s ease-out, width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#prism-orb.prism-orb--active.prism-orb--feedback:hover {
+  width: 18px;
+  cursor: default;
+}
+
+#prism-orb.prism-orb--active.prism-orb--feedback::before {
+  opacity: 1;
+  width: 120%; /* 광량을 높이기 위해 너비 확대 */
+  filter: blur(16px);
+}
