@@ -38,9 +38,13 @@ function safeSendMessage(message, callback) {
 function detectKind(code) {
   if (!code || typeof code !== "string") return "text";
 
-  // 1. Explicit HTML Document
+  // 1. Explicit HTML Document — 단, 시각적 콘텐츠가 있어야 함
   if (/^\s*<!DOCTYPE\s+html/i.test(code) || /<html[\s>]/i.test(code)) {
-    return "html";
+    const hasBody = /<body[\s>]/i.test(code);
+    const hasVisualTag = /<(div|span|p|h[1-6]|section|article|main|nav|header|footer|form|table|ul|ol|li|img|canvas|svg|video|audio|button|input|a|figure)\b/i.test(code);
+    const isComplete = /<\/html\s*>/i.test(code);
+    if (hasBody || hasVisualTag || isComplete) return "html";
+    // head만 있으면 다음 규칙으로 fall through
   }
 
   // 2. Strong React/Vue Source Indicators
@@ -65,8 +69,16 @@ function detectKind(code) {
   if (/useState\s*\(|useEffect\s*\(|use[A-Z][a-zA-Z]*\s*\(|ReactDOM/.test(code)) return "react";
   if (/createApp\s*\(|defineComponent\s*\(|from\s+['"]vue['"]/.test(code)) return "vue";
 
-  // 4. Generic HTML Fragment
-  if (/<[a-z][\s\S]*>/i.test(code)) return "html";
+  // 4. Generic HTML Fragment (엄격한 판별)
+  // 비시각적/구조적 태그를 모두 제거한 후 시각적 콘텐츠가 남는지 확인
+  const stripped = code.replace(/<\/?(!doctype|html|head|body|meta|link|title|script|style|br|hr|!--)[\s\S]*?>/gi, "").trim();
+
+  if (/<[a-z][\s\S]*>/i.test(stripped)) {
+    // 시각적 태그의 닫는 태그가 있거나, 시각적 태그가 2개 이상
+    const hasVisualClosing = /<\/(div|span|p|h[1-6]|section|article|main|nav|header|footer|form|table|ul|ol|li|a|figure|button|label|textarea|select|details|summary|dialog|aside)\s*>/i.test(code);
+    const visualTagCount = (stripped.match(/<[a-z][^>]*>/gi) || []).length;
+    if (hasVisualClosing || visualTagCount >= 2) return "html";
+  }
 
   return "text";
 }
@@ -79,13 +91,13 @@ function detectTheme() {
     const body = document.body;
 
     // 1. 명시적인 클래스나 data-theme 속성 확인 (가장 정확함)
-    const isDarkAttr = 
-      html.classList.contains("dark") || 
+    const isDarkAttr =
+      html.classList.contains("dark") ||
       body?.classList?.contains("dark") ||
       html.getAttribute("data-theme") === "dark" ||
       body?.getAttribute("data-theme") === "dark" ||
       html.style.colorScheme === "dark";
-    
+
     if (isDarkAttr) return "dark";
 
     // 2. 배경색 휘도(Luminance) 계산 로직
@@ -93,7 +105,7 @@ function detectTheme() {
       if (!el) return null;
       const bg = window.getComputedStyle(el).backgroundColor;
       if (!bg || bg === "transparent" || bg === "rgba(0, 0, 0, 0)") return null;
-      
+
       const rgb = bg.match(/\d+/g);
       if (rgb && rgb.length >= 3) {
         return (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255;
@@ -106,7 +118,7 @@ function detectTheme() {
     if (luminance !== null) {
       return luminance < 0.5 ? "dark" : "light";
     }
-  } catch (err) {}
+  } catch (err) { }
 
   // 3. 모든 감지 실패 시 기본값은 라이트 모드
   return "light";
@@ -122,9 +134,9 @@ document.addEventListener("prism-clipboard-write", (event) => {
 
 ["pointerdown", "keydown"].forEach((eventName) => {
   document.addEventListener(eventName, (event) => {
-      if (event && event.isTrusted === false) return;
-      lastUserGestureAt = Date.now();
-    }, true);
+    if (event && event.isTrusted === false) return;
+    lastUserGestureAt = Date.now();
+  }, true);
 });
 
 document.addEventListener("copy", (event) => {
@@ -140,7 +152,7 @@ document.addEventListener("copy", (event) => {
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "PRISM_PANEL_STATUS") {
     panelOpen = Boolean(message.open);
-    
+
     // 패널이 닫혔다면(false), 다음 복사 시 오브가 뜰 준비를 함
     if (!panelOpen) {
       destroyOrb(); // 혹시 남아있을지 모를 오브 정리
@@ -208,7 +220,7 @@ function ensureOrb() {
     if (!lastCode) return;
 
     // 클릭 시 패널이 열리므로 상태 즉시 변경
-    panelOpen = true; 
+    panelOpen = true;
     destroyOrb(); // 오브 즉시 제거
 
     safeSendMessage({
@@ -234,15 +246,15 @@ function showOrb() {
 
 function showFeedback() {
   const orb = ensureOrb();
-  
+
   // 기존 타이머나 상태 초기화
   if (hideTimer) clearTimeout(hideTimer);
   if (cleanupTimer) clearTimeout(cleanupTimer);
-  
+
   // 피드백 모드 클래스 추가 (CSS에서 클릭 방지 및 아이콘 숨김 처리)
   orb.classList.add("prism-orb--feedback");
   orb.dataset.theme = detectTheme();
-  
+
   // [Animation Fix] 브라우저가 초기 상태(width: 0)를 인식하도록 강제 리플로우
   void orb.offsetWidth;
 
