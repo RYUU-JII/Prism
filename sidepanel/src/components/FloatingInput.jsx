@@ -5,6 +5,7 @@ const FloatingInput = ({
     initialValue,
     elementRect,
     viewerRect,
+    canvasFrozen,
     onSave,
     onRemove,
     onClose,
@@ -106,6 +107,12 @@ const FloatingInput = ({
                 <div className="floating-input__header">
                     <span className="floating-input__line-tag">
                         {isBackground ? 'Background' : `Line ${line}`}
+                    </span>
+                    <span
+                        className={`floating-input__state ${canvasFrozen ? 'is-paused' : 'is-playing'}`}
+                        title={canvasFrozen ? 'Canvas paused' : 'Canvas playing'}
+                    >
+                        {canvasFrozen ? 'Paused' : 'Playing'}
                     </span>
                     {hasExisting && (
                         <button

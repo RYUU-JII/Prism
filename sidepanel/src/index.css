@@ -277,14 +277,18 @@ body.prism-window #viewer {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #4a3d34;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   position: relative;
+  -webkit-font-smoothing: antialiased;
 }
 
 .panel-shell__action svg {
   width: 18px;
   height: 18px;
   fill: #4a3d34;
+  display: block;
+  /* Avoid baseline gaps */
+  flex-shrink: 0;
 }
 
 .panel-shell__action span {
@@ -391,76 +395,21 @@ body.prism-no-picker .panel-shell__overlay {
   flex-direction: column;
 }
 
-/* ── Canvas freeze/play button ── */
-.canvas-freeze-btn {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  z-index: 50;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-  padding: 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+/* -- Play/Pause button specific -- */
+.panel-shell__action--play svg {
+  fill: #0d9488 !important;
 }
 
-.canvas-freeze-btn svg {
-  width: 16px;
-  height: 16px;
-  fill: #4a3d34;
+.panel-shell__action--pause svg {
+  fill: #ff7a3d !important;
 }
 
-.canvas-freeze-btn:hover {
-  transform: scale(1.08);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+body[data-theme="dark"] .panel-shell__action--play svg {
+  fill: #5eead4 !important;
 }
 
-.canvas-freeze-btn:active {
-  transform: scale(0.95);
-}
-
-.canvas-freeze-btn.is-frozen svg {
-  fill: #0d9488;
-}
-
-.canvas-freeze-btn.is-playing {
-  background: rgba(20, 184, 166, 0.15);
-  border-color: rgba(20, 184, 166, 0.4);
-}
-
-.canvas-freeze-btn.is-playing svg {
-  fill: #0d9488;
-}
-
-body[data-theme="dark"] .canvas-freeze-btn {
-  background: rgba(40, 40, 45, 0.85);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-body[data-theme="dark"] .canvas-freeze-btn svg {
-  fill: #e0e0e0;
-}
-
-body[data-theme="dark"] .canvas-freeze-btn.is-frozen svg {
-  fill: #5eead4;
-}
-
-body[data-theme="dark"] .canvas-freeze-btn.is-playing {
-  background: rgba(20, 184, 166, 0.2);
-  border-color: rgba(20, 184, 166, 0.4);
-}
-
-body[data-theme="dark"] .canvas-freeze-btn.is-playing svg {
-  fill: #5eead4;
+body[data-theme="dark"] .panel-shell__action--pause svg {
+  fill: #fb923c !important;
 }
 
 /* ── Header action states ── */
@@ -566,6 +515,28 @@ body[data-theme="dark"] .canvas-freeze-btn.is-playing svg {
   padding: 2px 8px;
   border-radius: 6px;
   letter-spacing: 0.02em;
+}
+
+.floating-input__state {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.floating-input__state.is-paused {
+  color: #ea580c;
+  background: rgba(249, 115, 22, 0.12);
+  border-color: rgba(249, 115, 22, 0.28);
+}
+
+.floating-input__state.is-playing {
+  color: #0f766e;
+  background: rgba(20, 184, 166, 0.1);
+  border-color: rgba(20, 184, 166, 0.24);
 }
 
 .floating-input__remove,
@@ -705,6 +676,18 @@ body[data-theme="dark"] .floating-input {
 body[data-theme="dark"] .floating-input__line-tag {
   background: rgba(20, 184, 166, 0.15);
   color: #5eead4;
+}
+
+body[data-theme="dark"] .floating-input__state.is-paused {
+  color: #fdba74;
+  background: rgba(251, 146, 60, 0.16);
+  border-color: rgba(251, 146, 60, 0.32);
+}
+
+body[data-theme="dark"] .floating-input__state.is-playing {
+  color: #5eead4;
+  background: rgba(20, 184, 166, 0.18);
+  border-color: rgba(20, 184, 166, 0.36);
 }
 
 body[data-theme="dark"] .floating-input__field {

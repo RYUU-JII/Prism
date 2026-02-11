@@ -11,6 +11,8 @@ const Header = ({
   onPickerToggle,
   isPickerDisabled,
   instructionCount,
+  canvasFrozen,
+  onFreezeToggle,
 }) => {
   return (
     <header className="panel-shell__bar">
@@ -39,6 +41,20 @@ const Header = ({
         </button>
       </div>
       <div className="panel-shell__actions">
+        {/* Play/Pause toggle */}
+        <button
+          className={`panel-shell__action ${canvasFrozen ? 'panel-shell__action--pause' : 'panel-shell__action--play'}`}
+          type="button"
+          onClick={onFreezeToggle}
+          aria-label={canvasFrozen ? 'Play animations' : 'Pause animations'}
+          data-tooltip={canvasFrozen ? 'Play' : 'Pause'}
+        >
+          {canvasFrozen ? (
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+          ) : (
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+          )}
+        </button>
         {/* Picker toggle */}
         <button
           className={`panel-shell__action ${pickerActive ? 'panel-shell__action--active' : ''}`}
