@@ -83,7 +83,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       sendResponse({ ok: true, open: isOpen });
     })();
-    return true;
+    return true; // 비동기 응답 처리
   }
 
   // 3. 렌더러(패널)로부터 상태 변경 알림 수신

@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Header from './components/Header.jsx';
 import Viewer from './components/Viewer.jsx';
-import Footer from './components/Footer.jsx';
+import FloatingInput from './components/FloatingInput.jsx';
 import ExpertEditor from './components/ExpertEditor.jsx';
 import { performCaptureInParent } from './utils/capture';
 import { useToast } from './hooks/useToast.jsx';
 
 const ENABLE_EXPERT_MODE = false;
-const ENABLE_PICKER = false;
+const ENABLE_PICKER = true;
 const SNAPSHOT_COOLDOWN_MS = 900;
 
 function normalizeSource(url) {
@@ -175,6 +175,11 @@ function App() {
   const [pickerActive, setPickerActive] = useState(false);
   const [focusLine, setFocusLine] = useState(null);
   const [focusToken, setFocusToken] = useState(0);
+  const [instructions, setInstructions] = useState({});
+  const [activeInstructionLine, setActiveInstructionLine] = useState(null);
+  const [activeElementRect, setActiveElementRect] = useState(null);
+  const [canvasFrozen, setCanvasFrozen] = useState(false);
+
   const viewerRef = useRef(null);
   const viewerReadyRef = useRef(false);
   const pendingPayloadRef = useRef(null);
@@ -252,6 +257,15 @@ function App() {
       "*"
     );
   }, [pickerActive]);
+
+  const sendFreezeToggle = useCallback((frozen) => {
+    const viewer = viewerRef.current;
+    if (!viewer?.contentWindow || !viewerReadyRef.current) return;
+    viewer.contentWindow.postMessage(
+      { type: "PRISM_FREEZE_TOGGLE", frozen },
+      "*"
+    );
+  }, []);
 
   const renderPayload = useCallback((code, language, url, theme) => {
     if (!code) {
@@ -500,6 +514,19 @@ function App() {
   }, [pickerActive, sendPickerToggle]);
 
   useEffect(() => {
+    sendFreezeToggle(canvasFrozen);
+  }, [canvasFrozen, sendFreezeToggle]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || !viewer.contentWindow || !viewerReadyRef.current) return;
+    viewer.contentWindow.postMessage({
+      type: "PRISM_UPDATE_INSTRUCTIONS",
+      instructions
+    }, "*");
+  }, [instructions]);
+
+  useEffect(() => {
     const handleMessage = (event) => {
       const viewer = viewerRef.current;
       if (!viewer || event.source !== viewer.contentWindow) return;
@@ -512,10 +539,16 @@ function App() {
 
       if (data.type === "PRISM_PICKER_SELECT") {
         if (!ENABLE_PICKER) return;
-        setPickerActive(false);
+        // Picker stays on — don't setPickerActive(false)
         const lineNumber = Number(data.line) || 1;
         setFocusLine(lineNumber);
         setFocusToken((token) => token + 1);
+        setActiveInstructionLine(lineNumber);
+        if (data.rect) {
+          setActiveElementRect(data.rect);
+        } else {
+          setActiveElementRect(null);
+        }
         return;
       }
 
@@ -574,7 +607,6 @@ function App() {
   }, []);
 
   const handleThemeToggle = useCallback(() => {
-    if (!ENABLE_EXPERT_MODE) return;
     const newTheme = expertTheme === "dark" ? "light" : "dark";
     localStorage.setItem("prism-expert-theme", newTheme);
     applyGlobalTheme(newTheme);
@@ -585,6 +617,73 @@ function App() {
     if (!payload) return;
     updateViewer(newCode, detectKind(newCode), payload.url, payload.theme);
   }, [updateViewer]);
+
+  const handleSaveInstruction = useCallback((text) => {
+    if (!activeInstructionLine) return;
+    setInstructions(prev => ({
+      ...prev,
+      [activeInstructionLine]: text
+    }));
+    showToast(`Line ${activeInstructionLine} 메모 저장됨`);
+    setActiveInstructionLine(null);
+    setActiveElementRect(null);
+  }, [activeInstructionLine, showToast]);
+
+  const handleClearSelection = useCallback(() => {
+    setActiveInstructionLine(null);
+    setActiveElementRect(null);
+  }, []);
+
+  const handleRemoveInstruction = useCallback(() => {
+    if (!activeInstructionLine) return;
+    setInstructions(prev => {
+      const next = { ...prev };
+      delete next[activeInstructionLine];
+      return next;
+    });
+    showToast(`Line ${activeInstructionLine} 메모 삭제됨`);
+    setActiveInstructionLine(null);
+    setActiveElementRect(null);
+  }, [activeInstructionLine, showToast]);
+
+  const handleExportPrompt = useCallback(() => {
+    const payload = latestPayloadRef.current;
+    if (!payload?.code) return;
+    if (Object.keys(instructions).length === 0) {
+      showToast("먼저 요소에 메모를 남겨주세요.");
+      return;
+    }
+
+    const lines = payload.code.split('\n');
+    let prompt = "Please modify the following HTML based on the provided instructions.\n\n";
+
+    prompt += "### INSTRUCTIONS\n";
+    Object.entries(instructions).forEach(([line, text]) => {
+      prompt += `- Line ${line}: ${text}\n`;
+    });
+
+    prompt += "\n### TARGET SNIPPETS\n";
+    Object.keys(instructions).forEach(lineNum => {
+      const idx = Number(lineNum) - 1;
+      const start = Math.max(0, idx - 2);
+      const end = Math.min(lines.length, idx + 3);
+      prompt += `--- Snippet around Line ${lineNum} ---\n`;
+      prompt += lines.slice(start, end).join('\n');
+      prompt += "\n\n";
+    });
+
+    // Simple Skeleton logic (remove attributes, keep tags)
+    const skeleton = payload.code
+      .replace(/<([a-z0-9-]+)[^>]*>/gi, '<$1>')
+      .replace(/<\/([a-z0-9-]+)>/gi, '</$1>');
+
+    prompt += "### FULL STRUCTURE (SKELETON)\n";
+    prompt += skeleton;
+
+    navigator.clipboard.writeText(prompt).then(() => {
+      showToast("Prompt copied to clipboard!");
+    });
+  }, [instructions, showToast]);
 
   const handleOpenWindow = useCallback(() => {
     const payload = latestPayloadRef.current;
@@ -620,8 +719,22 @@ function App() {
   const handlePickerToggle = useCallback(() => {
     if (!ENABLE_PICKER) return;
     if (latestPayload?.language !== "html") return;
-    setPickerActive((prev) => !prev);
+    setPickerActive((prev) => {
+      const next = !prev;
+      if (next) {
+        setCanvasFrozen(true);
+      } else {
+        setCanvasFrozen(false);
+        setActiveInstructionLine(null);
+        setActiveElementRect(null);
+      }
+      return next;
+    });
   }, [latestPayload?.language]);
+
+  const handleFreezeToggle = useCallback(() => {
+    setCanvasFrozen((prev) => !prev);
+  }, []);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -658,8 +771,41 @@ function App() {
         onSnapshot={() => handleSnapshot("download")}
         onCopy={() => handleSnapshot("clipboard")}
         onOpenWindow={handleOpenWindow}
+        onThemeToggle={handleThemeToggle}
+        onExportPrompt={handleExportPrompt}
+        pickerActive={pickerActive}
+        onPickerToggle={handlePickerToggle}
+        isPickerDisabled={isPickerDisabled}
+        instructionCount={Object.keys(instructions).length}
       />
-      <Viewer ref={viewerRef} onReady={handleViewerReady} />
+      <div className="viewer-container">
+        <Viewer ref={viewerRef} onReady={handleViewerReady} />
+        {pickerActive && (
+          <button
+            className={`canvas-freeze-btn ${canvasFrozen ? 'is-frozen' : 'is-playing'}`}
+            onClick={handleFreezeToggle}
+            aria-label={canvasFrozen ? 'Play animations' : 'Pause animations'}
+            title={canvasFrozen ? '재생' : '일시정지'}
+          >
+            {canvasFrozen ? (
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+            ) : (
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+            )}
+          </button>
+        )}
+        {activeInstructionLine !== null && (
+          <FloatingInput
+            line={activeInstructionLine}
+            initialValue={instructions[activeInstructionLine] || ''}
+            elementRect={activeElementRect}
+            viewerRect={viewerRef.current?.getBoundingClientRect?.()}
+            onSave={handleSaveInstruction}
+            onRemove={handleRemoveInstruction}
+            onClose={handleClearSelection}
+          />
+        )}
+      </div>
       {ENABLE_EXPERT_MODE && expertMode && (
         <ExpertEditor
           code={latestPayload?.code || ""}
@@ -669,17 +815,6 @@ function App() {
           focusToken={focusToken}
         />
       )}
-      <Footer
-        expertMode={expertMode}
-        onExpertModeToggle={handleExpertToggle}
-        expertTheme={expertTheme}
-        onExpertThemeToggle={handleThemeToggle}
-        pickerActive={pickerActive}
-        onPickerToggle={handlePickerToggle}
-        isPickerDisabled={isPickerDisabled}
-        isExpertEnabled={ENABLE_EXPERT_MODE}
-        isPickerEnabled={ENABLE_PICKER}
-      />
     </div>
   );
 }
