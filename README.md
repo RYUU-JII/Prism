@@ -56,7 +56,7 @@ Prism/
   manifest.json
   background.js
   content/
-    spy.js
+    clipboard-bridge.js
     prism-orb.js
     prism-orb.css
   sidepanel/

@@ -1,7 +1,6 @@
 // Utility functions for capturing screenshots.
 
 const scriptLoadCache = new Map();
-const styleLoadCache = new Map();
 
 async function toDataURL(url, baseUrl) {
   if (!url || url.startsWith("data:")) return url;
@@ -71,21 +70,26 @@ function loadScriptOnce(src, globalName) {
   return promise;
 }
 
-function loadStyleOnce(href) {
-  if (styleLoadCache.has(href)) return styleLoadCache.get(href);
-  const existing = document.querySelector(`link[data-prism-style="${href}"]`);
-  if (existing) return Promise.resolve();
-  const promise = new Promise((resolve, reject) => {
+function cleanupLegacyCaptureStyles() {
+  document
+    .querySelectorAll("link[data-prism-style^='sidepanel/']")
+    .forEach((node) => node.remove());
+}
+
+function loadStyleIntoRoot(root, href) {
+  return new Promise((resolve, reject) => {
+    if (!root) {
+      resolve();
+      return;
+    }
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = chrome.runtime.getURL(href);
-    link.dataset.prismStyle = href;
+    link.dataset.prismCaptureStyle = href;
     link.onload = () => resolve();
     link.onerror = () => reject(new Error(`Failed to load ${href}`));
-    document.head.appendChild(link);
+    root.appendChild(link);
   });
-  styleLoadCache.set(href, promise);
-  return promise;
 }
 
 function applyInlineStyles(element, styles) {
@@ -93,6 +97,73 @@ function applyInlineStyles(element, styles) {
   Object.keys(styles).forEach((key) => {
     element.style[key] = styles[key];
   });
+}
+
+function appendInlineStyleBlocks(root, inlineStyles) {
+  if (!root || !Array.isArray(inlineStyles) || inlineStyles.length === 0) return;
+  inlineStyles.forEach((cssText, index) => {
+    const text = typeof cssText === "string" ? cssText.trim() : "";
+    if (!text) return;
+    const style = document.createElement("style");
+    style.dataset.prismCaptureInlineStyle = String(index);
+    style.textContent = text;
+    root.appendChild(style);
+  });
+}
+
+function restoreCanvasSnapshots(root, canvasSnapshots) {
+  if (!root || !Array.isArray(canvasSnapshots) || canvasSnapshots.length === 0) return;
+
+  const canvasById = new Map();
+  root.querySelectorAll("canvas[data-prism-capture-id]").forEach((canvas) => {
+    const id = canvas.getAttribute("data-prism-capture-id");
+    if (id) canvasById.set(id, canvas);
+  });
+
+  let taintedCount = 0;
+  canvasSnapshots.forEach((snapshot) => {
+    if (!snapshot || !snapshot.id || !snapshot.dataUrl) {
+      if (snapshot?.tainted) taintedCount += 1;
+      return;
+    }
+    const canvas = canvasById.get(String(snapshot.id));
+    if (!canvas) return;
+
+    const img = document.createElement("img");
+    img.src = snapshot.dataUrl;
+    img.alt = canvas.getAttribute("aria-label") || "";
+    img.decoding = "sync";
+    img.loading = "eager";
+    img.className = canvas.className || "";
+    if (canvas.id) img.id = canvas.id;
+
+    const inlineStyle = canvas.getAttribute("style");
+    if (inlineStyle) {
+      img.setAttribute("style", inlineStyle);
+    }
+
+    const width = Number(snapshot.width);
+    const height = Number(snapshot.height);
+    if (Number.isFinite(width) && width > 0) {
+      img.width = width;
+    }
+    if (Number.isFinite(height) && height > 0) {
+      img.height = height;
+    }
+
+    if (!img.style.width && snapshot.cssWidth) img.style.width = snapshot.cssWidth;
+    if (!img.style.height && snapshot.cssHeight) img.style.height = snapshot.cssHeight;
+    if (!img.style.display && snapshot.display) img.style.display = snapshot.display;
+
+    img.dataset.prismCaptureCanvas = "true";
+    canvas.replaceWith(img);
+  });
+
+  if (taintedCount > 0) {
+    console.warn(
+      `[Prism] ${taintedCount} canvas element(s) could not be serialized due to canvas tainting.`
+    );
+  }
 }
 
 function waitForPaint(frames = 2) {
@@ -141,8 +212,10 @@ export async function performCaptureInParent(data, latestPayload, showToast) {
       throw new Error("No capture payload provided.");
     }
 
-    const VIRTUAL_WIDTH = 1280;
-    const VIRTUAL_HEIGHT = Math.max(720, Math.ceil(Number(data.height) || 0));
+    cleanupLegacyCaptureStyles();
+
+    const VIRTUAL_WIDTH = Math.max(1, Math.ceil(Number(data.width) || 0) || 1280);
+    const VIRTUAL_HEIGHT = Math.max(1, Math.ceil(Number(data.height) || 0));
 
     host = document.createElement("div");
     host.id = "prism-capture-host";
@@ -185,6 +258,8 @@ overflow: hidden;
     stage.style.boxSizing = "border-box";
     applyInlineStyles(stage, data.rootStyles);
     stage.innerHTML = data.html;
+    appendInlineStyleBlocks(shadowRoot, data.inlineStyles);
+    restoreCanvasSnapshots(stage, data.canvasSnapshots);
 
     stage.querySelectorAll("script").forEach((el) => el.remove());
     stage.querySelectorAll("link[rel='stylesheet']").forEach((el) => el.remove());
@@ -210,9 +285,13 @@ overflow: hidden;
 
     const baseUrl = latestPayload?.url || "";
     await inlineAllResources(stage, baseUrl);
-    await loadStyleOnce("sidepanel/theme.css").catch(() => {});
-    if (data.html.includes("class=")) {
-      await loadStyleOnce("sidepanel/tailwind.css").catch(() => {});
+    // Keep capture styles isolated to the capture shadow root.
+    // Loading legacy theme.css globally causes panel layout/theme corruption.
+    const shouldLoadTailwind =
+      data?.prismTailwindInjected === true ||
+      (data?.prismTailwindInjected == null && data.html.includes("class="));
+    if (shouldLoadTailwind) {
+      await loadStyleIntoRoot(shadowRoot, "sidepanel/tailwind.css").catch(() => {});
     }
     await loadScriptOnce("sidepanel/vendor/modern-screenshot.js");
 
@@ -261,6 +340,7 @@ overflow: hidden;
     console.error("[Prism] Parent capture failed:", err);
     showToast("Error generating snapshot.");
   } finally {
+    cleanupLegacyCaptureStyles();
     if (host) {
       host.remove();
     } else if (container) {

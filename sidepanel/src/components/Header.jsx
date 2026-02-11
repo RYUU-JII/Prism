@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 
+const SETTINGS_TABS = [
+  { id: "core", label: "Core" },
+  { id: "global", label: "Global" },
+];
+
 const Header = ({
   onSaveHtml,
   onSnapshot,
@@ -9,20 +14,26 @@ const Header = ({
   pickerActive,
   onPickerToggle,
   isPickerDisabled,
+  isSnapshotDisabled,
+  isFreezeDisabled,
+  isExportPromptDisabled,
   instructionCount,
   canvasFrozen,
   onFreezeToggle,
   uiSettings,
   onToggleSetting,
   onUpdateSetting,
-  theme,
-  onThemeChange,
+  themeMode,
+  onThemeModeChange,
 }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("core");
   const shellRef = useRef(null);
   const pickerHighlight = uiSettings?.pickerHighlight || {};
+  const showTooltips = uiSettings?.showTooltips !== false;
+  const activeThemeMode =
+    themeMode === "light" || themeMode === "dark" ? themeMode : "detect";
 
   useEffect(() => {
     if (!settingsOpen && !utilityMenuOpen) return undefined;
@@ -61,9 +72,10 @@ const Header = ({
   const coreButtonDefs = [
     {
       id: "playPause",
-      title: canvasFrozen ? "Play animations" : "Pause animations",
-      tooltip: canvasFrozen ? "Play" : "Pause",
+      title: canvasFrozen ? "Resume Playback" : "Pause Playback",
+      tooltip: canvasFrozen ? "Resume" : "Pause",
       action: onFreezeToggle,
+      disabled: Boolean(isFreezeDisabled),
       extraClass: canvasFrozen ? "panel-shell__action--pause" : "panel-shell__action--play",
       icon: canvasFrozen ? (
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -77,8 +89,8 @@ const Header = ({
     },
     {
       id: "picker",
-      title: "Toggle element picker",
-      tooltip: "Element picker",
+      title: "Element Picker",
+      tooltip: "Picker",
       action: onPickerToggle,
       extraClass: pickerActive ? "panel-shell__action--active" : "",
       icon: (
@@ -89,9 +101,10 @@ const Header = ({
     },
     {
       id: "exportPrompt",
-      title: "Export AI prompt",
-      tooltip: "Export prompt",
+      title: "Copy Prompt",
+      tooltip: "Copy prompt",
       action: onExportPrompt,
+      disabled: Boolean(isExportPromptDisabled),
       extraClass: "panel-shell__action--export",
       icon: (
         <>
@@ -109,10 +122,9 @@ const Header = ({
   const utilityButtonDefs = [
     {
       id: "openWindow",
-      title: "Open In Window",
-      tooltip: "Open window",
+      title: "Open in Window",
+      tooltip: "Open in window",
       action: onOpenWindow,
-      extraClass: "panel-shell__action--ghost",
       icon: (
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v2H6v8H4V6Zm6 6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-6Zm2 0v6h7v-6h-7Z" />
@@ -128,9 +140,10 @@ const Header = ({
     },
     {
       id: "snapshot",
-      title: "Save Image",
-      tooltip: "Save image",
+      title: "Save Screenshot",
+      tooltip: "Save screenshot",
       action: onSnapshot,
+      disabled: Boolean(isSnapshotDisabled),
       icon: (
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M8.5 7.5h7l1.2 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2.3l1.2-2Zm3.5 3.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z" />
@@ -139,9 +152,10 @@ const Header = ({
     },
     {
       id: "copyImage",
-      title: "Copy Image",
-      tooltip: "Copy image",
+      title: "Copy Screenshot",
+      tooltip: "Copy screenshot",
       action: onCopy,
+      disabled: Boolean(isSnapshotDisabled),
       icon: (
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M8 7a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2Zm2 0v9a2 2 0 0 0 2 2h5v2H6V9h2Zm2 0h7v9h-7V7Z" />
@@ -155,8 +169,39 @@ const Header = ({
     setUtilityMenuOpen(false);
   };
 
+  const resolveTooltip = (tooltip) => (showTooltips ? tooltip : undefined);
+
+  const renderSettingsTabs = () => (
+    <div
+      className="panel-shell__settings-inline-tabs"
+      role="tablist"
+      aria-label="Settings section"
+    >
+      {SETTINGS_TABS.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={settingsTab === tab.id}
+          className={`panel-shell__settings-title-tab ${settingsTab === tab.id ? "is-active" : ""}`}
+          onClick={() => setSettingsTab(tab.id)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const renderSettingsBlockTitle = (label) => (
+    <div className="panel-shell__settings-title panel-shell__settings-title--label">
+      <span className="panel-shell__settings-title-name">{label}</span>
+      {renderSettingsTabs()}
+    </div>
+  );
+
   const renderToolbarButton = (def, options = {}) => {
     const { disabled = false, inUtilityMenu = false } = options;
+    const buttonDisabled = Boolean(disabled || def.disabled);
     const classes = [
       "panel-shell__action",
       def.extraClass,
@@ -171,11 +216,11 @@ const Header = ({
         className={classes}
         type="button"
         aria-label={def.title}
-        data-tooltip={def.tooltip}
+        data-tooltip={resolveTooltip(def.tooltip)}
         role={inUtilityMenu ? "menuitem" : undefined}
-        disabled={disabled}
+        disabled={buttonDisabled}
         onClick={() => {
-          if (disabled) return;
+          if (buttonDisabled) return;
           def.action?.();
           if (inUtilityMenu) {
             setUtilityMenuOpen(false);
@@ -208,7 +253,7 @@ const Header = ({
               className={`panel-shell__action panel-shell__action--settings ${settingsOpen ? "panel-shell__action--active" : ""}`}
               type="button"
               aria-label="Toggle settings"
-              data-tooltip="Settings"
+              data-tooltip={resolveTooltip("Settings")}
               aria-expanded={settingsOpen}
               onClick={toggleSettings}
             >
@@ -225,7 +270,7 @@ const Header = ({
                 type="button"
                 aria-label="Open utility menu"
                 aria-expanded={utilityMenuOpen}
-                data-tooltip="Utilities"
+                data-tooltip={utilityMenuOpen ? undefined : resolveTooltip("Utilities")}
                 disabled={settingsOpen}
                 onClick={() => setUtilityMenuOpen((prev) => !prev)}
               >
@@ -251,37 +296,13 @@ const Header = ({
         data-active-tab={settingsTab}
         aria-hidden={!settingsOpen}
       >
-        <div
-          className="panel-shell__settings-title panel-shell__settings-title--tabs"
-          role="tablist"
-          aria-label="Settings section"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={settingsTab === "core"}
-            className={`panel-shell__settings-title-tab ${settingsTab === "core" ? "is-active" : ""}`}
-            onClick={() => setSettingsTab("core")}
-          >
-            Core
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={settingsTab === "global"}
-            className={`panel-shell__settings-title-tab ${settingsTab === "global" ? "is-active" : ""}`}
-            onClick={() => setSettingsTab("global")}
-          >
-            Global
-          </button>
-        </div>
         <div className="panel-shell__settings-grid panel-shell__settings-grid--two-column">
           <div className="panel-shell__settings-block is-core">
-            <div className="panel-shell__settings-title panel-shell__settings-title--label">Core</div>
+            {renderSettingsBlockTitle("Core")}
             <div className="panel-shell__setting-row">
               <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Auto Pause On Picker</div>
-                <div className="panel-shell__setting-description">피커 진입 시 자동 정지</div>
+                <div className="panel-shell__setting-title">Auto Pause on Picker</div>
+                <div className="panel-shell__setting-description">피커 시작 시 자동으로 일시정지</div>
               </div>
               <button
                 type="button"
@@ -296,7 +317,7 @@ const Header = ({
             <div className="panel-shell__setting-row">
               <div className="panel-shell__setting-copy">
                 <div className="panel-shell__setting-title">Keep Picker Active</div>
-                <div className="panel-shell__setting-description">선택 후 피커 유지</div>
+                <div className="panel-shell__setting-description">요소 선택 후 피커 모드 유지</div>
               </div>
               <button
                 type="button"
@@ -310,8 +331,8 @@ const Header = ({
             </div>
             <div className="panel-shell__setting-row is-stacked">
               <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Export Detail</div>
-                <div className="panel-shell__setting-description">라인/스니펫/전체 코드 범위</div>
+                <div className="panel-shell__setting-title">Prompt Detail Level</div>
+                <div className="panel-shell__setting-description">프롬프트에 포함할 코드 범위</div>
               </div>
               <div className="panel-shell__segmented">
                 {[1, 2, 3].map((level) => (
@@ -330,7 +351,7 @@ const Header = ({
               <div className="panel-shell__picker-heading">
                 <div className="panel-shell__setting-copy">
                   <div className="panel-shell__setting-title">Picker Highlight</div>
-                  <div className="panel-shell__setting-description">강도/색상 통합 설정</div>
+                  <div className="panel-shell__setting-description">피커 강조 색상 및 강도</div>
                 </div>
                 <input
                   className="panel-shell__color-input"
@@ -355,11 +376,11 @@ const Header = ({
             </div>
           </div>
           <div className="panel-shell__settings-block is-global">
-            <div className="panel-shell__settings-title panel-shell__settings-title--label">Global</div>
+            {renderSettingsBlockTitle("Global")}
             <div className="panel-shell__setting-row">
               <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Lock On Pause</div>
-                <div className="panel-shell__setting-description">일시정지 시 상호작용 차단</div>
+                <div className="panel-shell__setting-title">Interaction Lock on Pause</div>
+                <div className="panel-shell__setting-description">일시정지 상태에서 상호작용 잠금</div>
               </div>
               <button
                 type="button"
@@ -373,15 +394,15 @@ const Header = ({
             </div>
             <div className="panel-shell__setting-row">
               <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Dim Markers In Play</div>
-                <div className="panel-shell__setting-description">재생 중 메모 하이라이트 약화</div>
+                <div className="panel-shell__setting-title">Tooltips</div>
+                <div className="panel-shell__setting-description">버튼 호버 시 도움말 표시</div>
               </div>
               <button
                 type="button"
-                className={`panel-shell__switch ${uiSettings?.dimMarkersWhilePlaying ? "is-on" : ""}`}
-                aria-label="Dim markers in play mode"
-                aria-pressed={uiSettings?.dimMarkersWhilePlaying}
-                onClick={() => onToggleSetting?.("dimMarkersWhilePlaying")}
+                className={`panel-shell__switch ${showTooltips ? "is-on" : ""}`}
+                aria-label="Toggle tooltips"
+                aria-pressed={showTooltips}
+                onClick={() => onToggleSetting?.("showTooltips")}
               >
                 <span className="panel-shell__switch-thumb" />
               </button>
@@ -389,7 +410,7 @@ const Header = ({
             <div className="panel-shell__setting-row is-stacked">
               <div className="panel-shell__setting-copy">
                 <div className="panel-shell__setting-title">Feedback Intensity</div>
-                <div className="panel-shell__setting-description">토스트/글로우 시각 강도</div>
+                <div className="panel-shell__setting-description">시각 피드백 강도</div>
               </div>
               <div className="panel-shell__segmented">
                 {["low", "medium", "high"].map((level) => (
@@ -406,18 +427,22 @@ const Header = ({
             </div>
             <div className="panel-shell__setting-row is-stacked">
               <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Theme</div>
-                <div className="panel-shell__setting-description">패널 테마</div>
+                <div className="panel-shell__setting-title">Theme Mode</div>
+                <div className="panel-shell__setting-description">페이지 감지 또는 고정 모드</div>
               </div>
               <div className="panel-shell__segmented">
-                {["light", "dark"].map((mode) => (
+                {[
+                  { id: "detect", label: "Detect" },
+                  { id: "light", label: "Light" },
+                  { id: "dark", label: "Dark" },
+                ].map((mode) => (
                   <button
-                    key={mode}
+                    key={mode.id}
                     type="button"
-                    className={`panel-shell__segment ${theme === mode ? "is-active" : ""}`}
-                    onClick={() => onThemeChange?.(mode)}
+                    className={`panel-shell__segment ${activeThemeMode === mode.id ? "is-active" : ""}`}
+                    onClick={() => onThemeModeChange?.(mode.id)}
                   >
-                    {mode}
+                    {mode.label}
                   </button>
                 ))}
               </div>

@@ -1,0 +1,62 @@
+const VueGlobal = window.Vue;
+
+if (!VueGlobal) {
+  throw new Error("[Prism] Vue UMD global is not loaded.");
+}
+
+export default VueGlobal;
+
+export const compile = VueGlobal.compile;
+export const computed = VueGlobal.computed;
+export const createApp = VueGlobal.createApp;
+export const createSSRApp = VueGlobal.createSSRApp;
+export const customRef = VueGlobal.customRef;
+export const defineAsyncComponent = VueGlobal.defineAsyncComponent;
+export const defineComponent = VueGlobal.defineComponent;
+export const defineEmits = VueGlobal.defineEmits;
+export const defineExpose = VueGlobal.defineExpose;
+export const defineModel = VueGlobal.defineModel;
+export const defineOptions = VueGlobal.defineOptions;
+export const defineProps = VueGlobal.defineProps;
+export const defineSlots = VueGlobal.defineSlots;
+export const effectScope = VueGlobal.effectScope;
+export const getCurrentInstance = VueGlobal.getCurrentInstance;
+export const h = VueGlobal.h;
+export const inject = VueGlobal.inject;
+export const isRef = VueGlobal.isRef;
+export const markRaw = VueGlobal.markRaw;
+export const nextTick = VueGlobal.nextTick;
+export const onActivated = VueGlobal.onActivated;
+export const onBeforeMount = VueGlobal.onBeforeMount;
+export const onBeforeUnmount = VueGlobal.onBeforeUnmount;
+export const onBeforeUpdate = VueGlobal.onBeforeUpdate;
+export const onDeactivated = VueGlobal.onDeactivated;
+export const onErrorCaptured = VueGlobal.onErrorCaptured;
+export const onMounted = VueGlobal.onMounted;
+export const onRenderTracked = VueGlobal.onRenderTracked;
+export const onRenderTriggered = VueGlobal.onRenderTriggered;
+export const onScopeDispose = VueGlobal.onScopeDispose;
+export const onServerPrefetch = VueGlobal.onServerPrefetch;
+export const onUnmounted = VueGlobal.onUnmounted;
+export const onUpdated = VueGlobal.onUpdated;
+export const provide = VueGlobal.provide;
+export const reactive = VueGlobal.reactive;
+export const readonly = VueGlobal.readonly;
+export const ref = VueGlobal.ref;
+export const shallowReactive = VueGlobal.shallowReactive;
+export const shallowReadonly = VueGlobal.shallowReadonly;
+export const shallowRef = VueGlobal.shallowRef;
+export const toRaw = VueGlobal.toRaw;
+export const toRef = VueGlobal.toRef;
+export const toRefs = VueGlobal.toRefs;
+export const triggerRef = VueGlobal.triggerRef;
+export const unref = VueGlobal.unref;
+export const useAttrs = VueGlobal.useAttrs;
+export const useCssModule = VueGlobal.useCssModule;
+export const useCssVars = VueGlobal.useCssVars;
+export const useSlots = VueGlobal.useSlots;
+export const version = VueGlobal.version;
+export const watch = VueGlobal.watch;
+export const watchEffect = VueGlobal.watchEffect;
+export const watchPostEffect = VueGlobal.watchPostEffect;
+export const watchSyncEffect = VueGlobal.watchSyncEffect;

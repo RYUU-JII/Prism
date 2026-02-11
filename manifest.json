@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prism",
-  "description": "Copy. Prism. Render. Instant AI code previews in your side panel.",
+  "description": "Copy. Prism. Render. Instant HTML code previews in your side panel.",
   "version": "0.1.4",
   "permissions": ["sidePanel", "storage", "activeTab", "downloads"],
   "host_permissions": ["<all_urls>"],
@@ -9,7 +9,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content/spy.js"],
+      "js": ["content/clipboard-bridge.js"],
       "all_frames": true,
       "run_at": "document_start",
       "world": "MAIN"

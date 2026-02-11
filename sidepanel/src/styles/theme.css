@@ -1,0 +1,449 @@
+body[data-theme="light"] {
+  --ink: #162133;
+  --muted: #5b6676;
+  --glass: rgba(255, 255, 255, 0.86);
+  --glass-strong: rgba(255, 255, 255, 0.95);
+  --border: rgba(30, 55, 84, 0.2);
+  --shadow: rgba(17, 35, 58, 0.18);
+  background:
+    radial-gradient(circle at 12% 16%, #fffdf7 0%, rgba(255, 253, 247, 0.65) 34%, transparent 58%),
+    radial-gradient(circle at 88% 12%, rgba(217, 241, 255, 0.64) 0%, transparent 44%),
+    linear-gradient(155deg, #f7f4ec 0%, #edf4fb 48%, #e5eef8 100%);
+}
+
+body[data-theme="light"]::before {
+  opacity: 0.42;
+  background: radial-gradient(circle at 24% 28%, rgba(255, 170, 130, 0.26), rgba(255, 255, 255, 0));
+}
+
+body[data-theme="light"]::after {
+  opacity: 0.3;
+  background: conic-gradient(
+    from 120deg,
+    rgba(111, 214, 233, 0.18),
+    rgba(255, 201, 120, 0.22),
+    rgba(127, 166, 255, 0.14),
+    rgba(111, 214, 233, 0.18)
+  );
+}
+
+body[data-theme="light"] #viewer {
+  background: #ffffff;
+  border-color: rgba(24, 47, 75, 0.24);
+  box-shadow: 0 18px 42px rgba(18, 36, 59, 0.18);
+}
+
+body[data-theme="light"] #prism-toast {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(28, 54, 87, 0.22);
+  color: #1f2b3f;
+  box-shadow: 0 12px 26px rgba(17, 34, 55, 0.18);
+}
+
+body[data-theme="light"] .panel-shell__bar {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(27, 52, 83, 0.18);
+  box-shadow: 0 14px 30px rgba(17, 36, 58, 0.16);
+}
+
+body[data-theme="light"] .panel-shell__bar.is-settings-open {
+  box-shadow: 0 16px 34px rgba(17, 36, 58, 0.2);
+}
+
+body[data-theme="light"] .panel-shell__meta-divider {
+  background: rgba(24, 46, 73, 0.2);
+}
+
+body[data-theme="light"] .panel-shell__action {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(28, 54, 87, 0.22);
+  color: #243247;
+}
+
+body[data-theme="light"] .panel-shell__action svg {
+  fill: #243247;
+}
+
+body[data-theme="light"] .panel-shell__action:hover {
+  background: rgba(241, 249, 255, 0.98);
+  box-shadow: 0 7px 16px rgba(17, 36, 58, 0.18);
+}
+
+body[data-theme="light"] .panel-shell__action[data-tooltip]::after {
+  color: #213147;
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(28, 54, 87, 0.22);
+  box-shadow: 0 10px 24px rgba(16, 33, 54, 0.18);
+}
+
+body[data-theme="light"] .panel-shell__action[data-tooltip]::before {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(28, 54, 87, 0.22);
+}
+
+body[data-theme="light"] .panel-shell__settings.is-open {
+  border-top-color: rgba(25, 48, 76, 0.16);
+}
+
+body[data-theme="light"] .panel-shell__settings-block + .panel-shell__settings-block {
+  border-left-color: rgba(24, 47, 74, 0.14);
+}
+
+body[data-theme="light"] .panel-shell__settings-title,
+body[data-theme="light"] .panel-shell__setting-title {
+  color: #1f2f45;
+}
+
+body[data-theme="light"] .panel-shell__setting-description,
+body[data-theme="light"] .panel-shell__setting-placeholder,
+body[data-theme="light"] .panel-shell__setting-hint {
+  color: #59677a;
+}
+
+body[data-theme="light"] .panel-shell__setting-row {
+  border-top-color: rgba(25, 48, 76, 0.12);
+}
+
+body[data-theme="light"] .panel-shell__setting-row:first-child {
+  border-top-color: rgba(25, 48, 76, 0.16);
+}
+
+body[data-theme="light"] .panel-shell__segmented {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(24, 47, 74, 0.16);
+}
+
+body[data-theme="light"] .panel-shell__segment {
+  color: #33445a;
+}
+
+body[data-theme="light"] .panel-shell__segment + .panel-shell__segment {
+  border-left-color: rgba(24, 47, 74, 0.14);
+}
+
+body[data-theme="light"] .panel-shell__segment.is-active {
+  background: rgba(20, 184, 166, 0.18);
+  color: #0f766e;
+}
+
+body[data-theme="light"] .panel-shell__settings-title-tab {
+  color: #5e6b7f;
+}
+
+body[data-theme="light"] .panel-shell__settings-title-tab + .panel-shell__settings-title-tab {
+  border-left-color: rgba(24, 47, 74, 0.16);
+}
+
+body[data-theme="light"] .panel-shell__settings-title-tab.is-active {
+  color: #0f766e;
+}
+
+body[data-theme="light"] .panel-shell__color-input {
+  border-color: rgba(24, 47, 74, 0.2);
+}
+
+body[data-theme="light"] .panel-shell__switch {
+  border-color: rgba(24, 47, 74, 0.22);
+  background: rgba(21, 42, 69, 0.08);
+}
+
+body[data-theme="light"] .panel-shell__switch-thumb {
+  background: #ffffff;
+}
+
+body[data-theme="light"] .panel-shell__switch.is-on {
+  background: rgba(20, 184, 166, 0.34);
+  border-color: rgba(20, 184, 166, 0.52);
+}
+
+body[data-theme="light"] .panel-shell__utility-menu {
+  border-color: rgba(27, 52, 83, 0.22);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 24px rgba(16, 34, 56, 0.18);
+}
+
+body[data-theme="light"] .panel-shell__utility-menu-item:hover {
+  background: rgba(20, 184, 166, 0.14);
+}
+
+body[data-theme="light"] .floating-input {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(24, 47, 74, 0.18);
+  box-shadow:
+    0 10px 28px rgba(16, 34, 56, 0.14),
+    0 3px 10px rgba(16, 34, 56, 0.08);
+}
+
+body[data-theme="light"] .floating-input__field {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(24, 47, 74, 0.14);
+  color: #182437;
+}
+
+body[data-theme="light"] .floating-input__field:focus {
+  border-color: rgba(20, 184, 166, 0.5);
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.14);
+}
+
+body[data-theme="dark"] {
+  --ink: #e6edf8;
+  --muted: #9aa8bc;
+  --glass: rgba(15, 21, 31, 0.88);
+  --glass-strong: rgba(18, 25, 36, 0.95);
+  --border: rgba(168, 189, 216, 0.18);
+  --shadow: rgba(4, 8, 14, 0.62);
+  background:
+    radial-gradient(circle at 14% 14%, rgba(54, 84, 120, 0.28) 0%, transparent 44%),
+    radial-gradient(circle at 86% 12%, rgba(40, 98, 132, 0.2) 0%, transparent 40%),
+    linear-gradient(150deg, #0f131a 0%, #0b1017 48%, #070b11 100%);
+}
+
+body[data-theme="dark"]::before {
+  opacity: 0.34;
+  background: radial-gradient(circle at 24% 28%, rgba(255, 169, 122, 0.2), rgba(255, 255, 255, 0));
+}
+
+body[data-theme="dark"]::after {
+  opacity: 0.26;
+  background: conic-gradient(
+    from 130deg,
+    rgba(111, 214, 233, 0.2),
+    rgba(86, 137, 255, 0.16),
+    rgba(79, 210, 195, 0.16),
+    rgba(111, 214, 233, 0.2)
+  );
+}
+
+body[data-theme="dark"] #viewer {
+  background: #101722;
+  border-color: rgba(162, 186, 220, 0.2);
+  box-shadow: 0 20px 42px rgba(3, 8, 14, 0.55);
+}
+
+body[data-theme="dark"] #prism-toast {
+  background: rgba(18, 25, 36, 0.95);
+  border-color: rgba(164, 189, 223, 0.2);
+  color: #dce7f6;
+  box-shadow: 0 12px 30px rgba(4, 10, 18, 0.52);
+}
+
+body[data-theme="dark"] #prism-capture-flash {
+  border-color: rgba(94, 234, 212, 0.5);
+  background: linear-gradient(
+    138deg,
+    rgba(34, 197, 187, 0.2),
+    rgba(56, 189, 248, 0.12) 48%,
+    rgba(251, 146, 60, 0.16)
+  );
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+body[data-theme="dark"] .panel-shell__bar {
+  background: rgba(16, 23, 34, 0.9);
+  border-color: rgba(166, 190, 221, 0.18);
+  box-shadow: 0 14px 30px rgba(4, 9, 15, 0.5);
+}
+
+body[data-theme="dark"] .panel-shell__bar.is-settings-open {
+  box-shadow: 0 18px 36px rgba(4, 9, 15, 0.56);
+}
+
+body[data-theme="dark"] .panel-shell__meta-divider {
+  background: rgba(168, 191, 220, 0.22);
+}
+
+body[data-theme="dark"] .panel-shell__action {
+  background: rgba(27, 36, 51, 0.9);
+  border-color: rgba(168, 191, 221, 0.2);
+  color: #d9e4f4;
+}
+
+body[data-theme="dark"] .panel-shell__action svg {
+  fill: #d9e4f4;
+}
+
+body[data-theme="dark"] .panel-shell__action:hover {
+  background: rgba(37, 49, 68, 0.95);
+  box-shadow: 0 7px 16px rgba(4, 9, 15, 0.44);
+}
+
+body[data-theme="dark"] .panel-shell__action:disabled {
+  opacity: 0.42;
+  background: rgba(27, 36, 51, 0.62);
+}
+
+body[data-theme="dark"] .panel-shell__action[data-tooltip]::after {
+  color: #dce8f8;
+  background: rgba(18, 25, 36, 0.97);
+  border-color: rgba(166, 190, 222, 0.22);
+  box-shadow: 0 10px 24px rgba(4, 9, 16, 0.52);
+}
+
+body[data-theme="dark"] .panel-shell__action[data-tooltip]::before {
+  background: rgba(18, 25, 36, 0.97);
+  border-color: rgba(166, 190, 222, 0.22);
+}
+
+body[data-theme="dark"] .panel-shell__action--play svg {
+  fill: #5eead4 !important;
+}
+
+body[data-theme="dark"] .panel-shell__action--pause svg {
+  fill: #fb923c !important;
+}
+
+body[data-theme="dark"] .panel-shell__action--active {
+  background: rgba(20, 184, 166, 0.24) !important;
+  border-color: rgba(46, 221, 202, 0.5) !important;
+}
+
+body[data-theme="dark"] .panel-shell__action--active svg {
+  fill: #7cf0df !important;
+}
+
+body[data-theme="dark"] .action-count-badge {
+  background: #0ea5a1;
+}
+
+body[data-theme="dark"] .panel-shell__settings.is-open {
+  border-top-color: rgba(164, 188, 219, 0.16);
+}
+
+body[data-theme="dark"] .panel-shell__settings-block + .panel-shell__settings-block {
+  border-left-color: rgba(164, 188, 219, 0.14);
+}
+
+body[data-theme="dark"] .panel-shell__settings-title,
+body[data-theme="dark"] .panel-shell__setting-title {
+  color: #dfe9f8;
+}
+
+body[data-theme="dark"] .panel-shell__setting-description,
+body[data-theme="dark"] .panel-shell__setting-placeholder,
+body[data-theme="dark"] .panel-shell__setting-hint {
+  color: #9ba9bc;
+}
+
+body[data-theme="dark"] .panel-shell__setting-row {
+  border-top-color: rgba(164, 188, 219, 0.12);
+}
+
+body[data-theme="dark"] .panel-shell__setting-row:first-child {
+  border-top-color: rgba(164, 188, 219, 0.16);
+}
+
+body[data-theme="dark"] .panel-shell__segmented {
+  background: rgba(15, 22, 33, 0.92);
+  border-color: rgba(164, 188, 219, 0.14);
+}
+
+body[data-theme="dark"] .panel-shell__segment {
+  color: #d2deef;
+}
+
+body[data-theme="dark"] .panel-shell__segment + .panel-shell__segment {
+  border-left-color: rgba(164, 188, 219, 0.14);
+}
+
+body[data-theme="dark"] .panel-shell__segment.is-active {
+  background: rgba(20, 184, 166, 0.24);
+  color: #7cf0df;
+}
+
+body[data-theme="dark"] .panel-shell__settings-title-tab {
+  color: #95a4ba;
+}
+
+body[data-theme="dark"] .panel-shell__settings-title-tab + .panel-shell__settings-title-tab {
+  border-left-color: rgba(164, 188, 219, 0.18);
+}
+
+body[data-theme="dark"] .panel-shell__settings-title-tab.is-active {
+  color: #7cf0df;
+}
+
+body[data-theme="dark"] .panel-shell__color-input {
+  border-color: rgba(164, 188, 219, 0.22);
+}
+
+body[data-theme="dark"] .panel-shell__switch {
+  border-color: rgba(164, 188, 219, 0.22);
+  background: rgba(173, 194, 220, 0.1);
+}
+
+body[data-theme="dark"] .panel-shell__switch-thumb {
+  background: #f3f7fd;
+}
+
+body[data-theme="dark"] .panel-shell__switch.is-on {
+  background: rgba(20, 184, 166, 0.44);
+  border-color: rgba(46, 221, 202, 0.62);
+}
+
+body[data-theme="dark"] .panel-shell__utility-menu {
+  border-color: rgba(166, 190, 221, 0.2);
+  background: rgba(18, 25, 36, 0.97);
+  box-shadow: 0 12px 26px rgba(4, 9, 16, 0.52);
+}
+
+body[data-theme="dark"] .panel-shell__utility-menu-item {
+  color: #dce8f8;
+}
+
+body[data-theme="dark"] .panel-shell__utility-menu-item:hover {
+  background: rgba(20, 184, 166, 0.24);
+}
+
+body[data-theme="dark"] .floating-input {
+  background: rgba(18, 25, 37, 0.92);
+  border-color: rgba(166, 190, 221, 0.14);
+  box-shadow:
+    0 10px 30px rgba(3, 8, 14, 0.5),
+    0 3px 10px rgba(3, 8, 14, 0.34);
+}
+
+body[data-theme="dark"] .floating-input__line-tag {
+  background: rgba(20, 184, 166, 0.15);
+  color: #5eead4;
+}
+
+body[data-theme="dark"] .floating-input__state.is-paused {
+  color: #fdba74;
+  background: rgba(251, 146, 60, 0.16);
+  border-color: rgba(251, 146, 60, 0.32);
+}
+
+body[data-theme="dark"] .floating-input__state.is-playing {
+  color: #5eead4;
+  background: rgba(20, 184, 166, 0.18);
+  border-color: rgba(20, 184, 166, 0.36);
+}
+
+body[data-theme="dark"] .floating-input__field {
+  background: rgba(171, 193, 220, 0.08);
+  border-color: rgba(166, 190, 221, 0.14);
+  color: #dde8f8;
+}
+
+body[data-theme="dark"] .floating-input__field:focus {
+  border-color: rgba(42, 219, 200, 0.46);
+  box-shadow: 0 0 0 2px rgba(42, 219, 200, 0.14);
+}
+
+body[data-theme="dark"] .floating-input__close:hover {
+  background: rgba(164, 188, 220, 0.12);
+  color: #dfeaf8;
+}
+
+body[data-theme="dark"] .floating-input__remove:hover {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fca5a5;
+}
+
+body[data-theme="dark"] .floating-input__send {
+  background: #0ea5a1;
+}
+
+body[data-theme="dark"] .floating-input-backdrop {
+  background: rgba(2, 7, 13, 0.32);
+}

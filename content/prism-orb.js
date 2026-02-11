@@ -170,7 +170,7 @@ safeSendMessage({ type: "PRISM_PANEL_STATUS_REQUEST" }, (resp) => {
 
 
 function handleCodeCopy(text) {
-  // [중복 방지] copy 이벤트와 spy.js가 동시에 트리거될 때 두 번 실행되는 것을 방지 (100ms 디바운스)
+  // [중복 방지] copy 이벤트와 clipboard-bridge.js가 동시에 트리거될 때 두 번 실행되는 것을 방지 (100ms 디바운스)
   const now = Date.now();
   if (now - lastCopyTime < 100) return;
   lastCopyTime = now;

@@ -18,7 +18,7 @@ graph TD
 ```
 
 ### 1. The Host Layer (Content Scripts)
-- **`content/spy.js`**: Injects logic into the page to listen for internal clipboard events that standard listeners might miss.
+- **`content/clipboard-bridge.js`**: Injects logic into the page to listen for internal clipboard events that standard listeners might miss.
 - **`content/prism-orb.js`**: Detects copy gestures, analyzes the code (kind, theme), and displays a "Refract" Orb (HUD) to send code to Prism.
 - **`content/prism-orb.css`**: Styling for the Orb HUD.
 
@@ -41,7 +41,7 @@ Prism/
 ├── manifest.json           # Extension configuration (MV3)
 ├── background.js           # Shared event handler
 ├── content/
-│   ├── spy.js              # Injector script
+│   ├── clipboard-bridge.js # Clipboard event bridge
 │   ├── prism-orb.js        # Web page interaction & detection
 │   └── prism-orb.css       # Orb UI styling
 ├── sidepanel/
@@ -53,7 +53,13 @@ Prism/
 │       ├── components/
 │       │   ├── Header.jsx         # Global actions & Play/Pause controls
 │       │   └── FloatingInput.jsx  # AI instruction/memo overlay
-│       └── index.css       # Design system & global styles
+│       ├── index.css       # Tailwind entrypoint
+│       └── styles/
+│           ├── base.css          # Global layout & shell
+│           ├── layout.css        # Header/settings controls
+│           ├── floating-input.css# Picker memo card UI
+│           ├── editor.css        # Expert editor surface
+│           └── theme.css         # Light/Dark theme overrides
 └── icons/                  # App icons (16, 32, 48, 128)
 ```
 
@@ -79,3 +85,28 @@ Prism/
 
 ## 🎯 Purpose for AI Agents
 When working on Prism, an AI agent should focus on the **`App.jsx` <-> `sandbox.html`** bridge for UI/feature changes, and **`prism-orb.js`** for interaction within the user's current browsing session.
+
+---
+
+## 🧭 Theme & Visual Refactor Readiness
+
+### Current Risks (Observed)
+- **Capture style leakage**: Legacy capture flow injected `sidepanel/theme.css` into the global sidepanel document, causing post-capture layout/theme corruption.
+- **Theme source duplication**: `sidepanel/src/index.css` includes overlapping light/dark override blocks and legacy style sections, increasing cascade conflicts.
+- **Visual state split**: Picker/memo visuals are partially controlled in `sidepanel/sandbox.html` while panel theme lives in `sidepanel/src/index.css`, with weak token sharing.
+
+### Guardrails (Now Enforced)
+- Capture-only styles must be applied inside the capture ShadowRoot only.
+- Runtime sidepanel theme must not depend on capture-time stylesheet injection.
+
+### Refactor Execution Order
+1. **Token pass**: define one canonical token layer (surface, text, border, accent, feedback).
+2. **Layer split**: split `index.css` into `base/layout/components/theme-light/theme-dark`.
+3. **Legacy prune**: remove duplicated/unused panel demo blocks and old override clusters.
+4. **Sandbox alignment**: align picker marker colors/strength with shared token naming.
+5. **Regression checklist**: verify settings-open, utility dropdown, tooltip stacking, capture flow, light/dark snapshots.
+
+### Refactor Progress
+- ✅ Layer split completed (`base/layout/floating-input/editor/theme`).
+- ✅ Legacy panel demo sections removed from runtime sidepanel CSS.
+- 🔄 Remaining: sandbox visual token alignment and broader regression sweep.

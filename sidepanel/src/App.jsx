@@ -10,9 +10,19 @@ const ENABLE_EXPERT_MODE = false;
 const ENABLE_PICKER = true;
 const SNAPSHOT_COOLDOWN_MS = 900;
 const UI_SETTINGS_KEY = "prism-ui-settings-v3";
+const LEGACY_THEME_KEY = "prism-expert-theme";
+const VALID_THEME_MODES = ["detect", "light", "dark"];
+const DEFAULT_RUNTIME_CAPABILITIES = Object.freeze({
+  picker: true,
+  snapshot: true,
+  freeze: true,
+  reasons: {},
+});
+
 const DEFAULT_UI_SETTINGS = {
-  dimMarkersWhilePlaying: true,
+  themeMode: "detect",
   lockInteractionsWhenPaused: true,
+  showTooltips: true,
   feedbackIntensity: "medium",
   keepPickerActiveAfterSelect: true,
   exportPromptLevel: 2,
@@ -28,6 +38,12 @@ function loadUiSettings() {
     const raw = localStorage.getItem(UI_SETTINGS_KEY);
     if (!raw) return DEFAULT_UI_SETTINGS;
     const parsed = JSON.parse(raw);
+    const legacyTheme = localStorage.getItem(LEGACY_THEME_KEY);
+    const themeMode = VALID_THEME_MODES.includes(parsed?.themeMode)
+      ? parsed.themeMode
+      : legacyTheme === "light" || legacyTheme === "dark"
+        ? legacyTheme
+        : DEFAULT_UI_SETTINGS.themeMode;
     const exportPromptLevel = [1, 2, 3].includes(Number(parsed?.exportPromptLevel))
       ? Number(parsed.exportPromptLevel)
       : DEFAULT_UI_SETTINGS.exportPromptLevel;
@@ -55,14 +71,17 @@ function loadUiSettings() {
           : legacyColor,
     };
     return {
-      dimMarkersWhilePlaying:
-        typeof parsed?.dimMarkersWhilePlaying === "boolean"
-          ? parsed.dimMarkersWhilePlaying
-          : DEFAULT_UI_SETTINGS.dimMarkersWhilePlaying,
+      themeMode,
       lockInteractionsWhenPaused:
         typeof parsed?.lockInteractionsWhenPaused === "boolean"
           ? parsed.lockInteractionsWhenPaused
           : DEFAULT_UI_SETTINGS.lockInteractionsWhenPaused,
+      showTooltips:
+        typeof parsed?.showTooltips === "boolean"
+          ? parsed.showTooltips
+          : typeof parsed?.hideHintOverlay === "boolean"
+            ? !parsed.hideHintOverlay
+            : DEFAULT_UI_SETTINGS.showTooltips,
       feedbackIntensity,
       keepPickerActiveAfterSelect:
         typeof parsed?.keepPickerActiveAfterSelect === "boolean"
@@ -80,6 +99,11 @@ function loadUiSettings() {
   }
 }
 
+function resolveThemeModeTheme(themeMode, detectedTheme) {
+  if (themeMode === "light" || themeMode === "dark") return themeMode;
+  return detectedTheme === "dark" ? "dark" : "light";
+}
+
 function normalizeSource(url) {
   if (!url) return "";
   try {
@@ -91,27 +115,54 @@ function normalizeSource(url) {
 
 function detectKind(code) {
   if (!code || typeof code !== "string") return "text";
-  if (/^\s*<!DOCTYPE\s+html/i.test(code) || /<html[\s>]/i.test(code)) {
+  const source = String(code);
+
+  if (/^\s*<!DOCTYPE\s+html/i.test(source) || /<html[\s>]/i.test(source)) {
     return "html";
   }
-  const sourceIndicators = [
-    /^\s*import\s+.*\s+from\s+['"].*['"]/m,
-    /^\s*export\s+(default\s+)?(function|class|const|var|let)\s+/m,
+
+  const angularIndicators = [
+    /from\s+['"]@angular\//,
+    /\b@Component\s*\(/,
+    /\bNgModule\s*\(/,
+    /\bbootstrapApplication\s*\(/,
+  ];
+  if (angularIndicators.some((r) => r.test(source))) return "angular";
+
+  const svelteIndicators = [
+    /from\s+['"]svelte(?:\/|['"])/,
+    /<svelte:[a-z-]+/i,
+    /{#(if|each|await)\b/,
+  ];
+  if (svelteIndicators.some((r) => r.test(source))) return "svelte";
+
+  const vueIndicators = [
+    /\bv-(if|for|else|model|show|bind|on)\b/,
+    /@click\s*=|@submit\s*=/,
+    /:\w+\s*=/,
+    /<template[\s>]/i,
+    /from\s+['"]vue['"]/,
+    /createApp\s*\(/,
+    /defineComponent\s*\(/,
+    /defineProps\s*\(/,
+    /defineEmits\s*\(/,
+  ];
+  if (vueIndicators.some((r) => r.test(source))) return "vue";
+
+  const reactIndicators = [
     /className\s*=/i,
     /htmlFor\s*=/i,
     /dangerouslySetInnerHTML/i,
+    /useState\s*\(|useEffect\s*\(|useMemo\s*\(|useCallback\s*\(|useRef\s*\(/,
+    /ReactDOM|createRoot\s*\(/,
+    /from\s+['"]react['"]/,
+    /from\s+['"]react-dom(?:\/client)?['"]/,
     /<\s*>\s*[\s\S]*<\/\s*>/,
-    /\bv-(if|for|else|model|show|bind|on)\b/,
-    /@click\s*=|@submit\s*=/,
-    /:\w+\s*=/
+    /<\s*[A-Z][A-Za-z0-9_]*(\s|>)/,
   ];
-  if (sourceIndicators.some((r) => r.test(code))) {
-    if (/\bv-|@click|:\w+=|<template>|from\s+['"]vue['"]/.test(code)) return "vue";
-    return "react";
-  }
-  if (/useState\s*\(|useEffect\s*\(|use[A-Z][a-zA-Z]*\s*\(|ReactDOM/.test(code)) return "react";
-  if (/createApp\s*\(|defineComponent\s*\(|from\s+['"]vue['"]/.test(code)) return "vue";
-  if (/<[a-z][\s\S]*>/i.test(code)) return "html";
+  if (reactIndicators.some((r) => r.test(source))) return "react";
+
+  if (/<[a-z][\s\S]*>/i.test(source)) return "html";
   return "text";
 }
 
@@ -323,15 +374,12 @@ function interactionReducer(state, action) {
 function App() {
   const [latestPayload, setLatestPayload] = useState(null);
   const [expertMode, setExpertMode] = useState(false);
-  const [expertTheme, setExpertTheme] = useState(() => {
-    const storedTheme = localStorage.getItem("prism-expert-theme");
-    return storedTheme === "light" || storedTheme === "dark" ? storedTheme : "dark";
-  });
   const [uiSettings, setUiSettings] = useState(() => loadUiSettings());
   const [interactionState, dispatchInteraction] = useReducer(
     interactionReducer,
     initialInteractionState
   );
+  const [runtimeCapabilities, setRuntimeCapabilities] = useState(() => DEFAULT_RUNTIME_CAPABILITIES);
   const {
     pickerActive,
     focusLine,
@@ -355,6 +403,26 @@ function App() {
   const snapshotCooldownRef = useRef(0);
   const flashRef = useRef(null);
   const { ToastComponent, showToast } = useToast();
+  const activeTheme = useMemo(
+    () => resolveThemeModeTheme(uiSettings.themeMode, latestPayload?.theme),
+    [uiSettings.themeMode, latestPayload?.theme]
+  );
+  const isHtmlPayload = latestPayload?.language === "html";
+  const isPickerDisabled =
+    !ENABLE_PICKER ||
+    !isHtmlPayload ||
+    runtimeCapabilities?.picker === false;
+  const isSnapshotDisabled =
+    !latestPayload?.code ||
+    (isHtmlPayload && runtimeCapabilities?.snapshot === false);
+  const isFreezeDisabled =
+    !latestPayload?.code ||
+    !isHtmlPayload ||
+    (isHtmlPayload && runtimeCapabilities?.freeze === false);
+  const isExportPromptDisabled =
+    !latestPayload?.code ||
+    !isHtmlPayload ||
+    isPickerDisabled;
 
   const { targetTabId, isWindowMode } = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -371,8 +439,8 @@ function App() {
   }, [latestPayload]);
 
   useEffect(() => {
-    document.body.dataset.theme = expertTheme;
-  }, [expertTheme]);
+    document.body.dataset.theme = activeTheme;
+  }, [activeTheme]);
 
   useEffect(() => {
     document.body.dataset.feedbackIntensity = uiSettings.feedbackIntensity || "medium";
@@ -403,12 +471,6 @@ function App() {
 
   const handleFlashAnimationEnd = useCallback((event) => {
     event.currentTarget.classList.remove("active");
-  }, []);
-
-  const applyGlobalTheme = useCallback((theme) => {
-    if (!theme) return;
-    document.body.dataset.theme = theme;
-    setExpertTheme(theme);
   }, []);
 
   const postToSandbox = useCallback((payload) => {
@@ -443,42 +505,47 @@ function App() {
     viewer.contentWindow.postMessage(payload, "*");
   }, [buildUiStatePayload]);
 
-  const renderPayload = useCallback((code, language, url, theme) => {
+  const renderPayload = useCallback((code, language, url, sourceTheme, renderTheme) => {
     if (!code) {
       latestPayloadRef.current = null;
       setLatestPayload(null);
-      postToSandbox({ code: "", language: "text", url: "" });
+      setRuntimeCapabilities(DEFAULT_RUNTIME_CAPABILITIES);
+      postToSandbox({ code: "", language: "text", url: "", theme: renderTheme || "light" });
       return;
     }
     const kind = language && language !== "text" ? language : detectKind(code);
     const source = normalizeSource(url);
     const fixedCode = fixRelativePaths(code, source);
     const sandboxCode = kind === "html" ? addPrismLineAttributes(fixedCode) : fixedCode;
-    const payload = { code, language: kind, url: source, theme: theme || "light" };
+    const payload = { code, language: kind, url: source, theme: sourceTheme || "light" };
     latestPayloadRef.current = payload;
     setLatestPayload(payload);
-    postToSandbox({ ...payload, code: sandboxCode });
+    setRuntimeCapabilities(DEFAULT_RUNTIME_CAPABILITIES);
+    postToSandbox({
+      ...payload,
+      theme: renderTheme || "light",
+      code: sandboxCode,
+    });
   }, [postToSandbox]);
 
-  const updateViewer = useCallback((code, language, url, theme) => {
+  const updateViewer = useCallback((code, language, url, sourceTheme) => {
+    const resolvedTheme = resolveThemeModeTheme(uiSettings.themeMode, sourceTheme);
     if (!code) {
       lastRenderKeyRef.current = "";
       hasRenderedOnceRef.current = false;
-      renderPayload("", "text", "", theme);
+      renderPayload("", "text", "", sourceTheme, resolvedTheme);
       return;
     }
-    applyGlobalTheme(theme);
     const kind = language && language !== "text" ? language : detectKind(code);
     const source = normalizeSource(url);
-    const resolvedTheme = theme || "light";
     const renderKey = buildRenderKey(code, kind, source, resolvedTheme);
     if (hasRenderedOnceRef.current && renderKey === lastRenderKeyRef.current) {
       return;
     }
     hasRenderedOnceRef.current = true;
     lastRenderKeyRef.current = renderKey;
-    renderPayload(code, kind, source, resolvedTheme);
-  }, [applyGlobalTheme, renderPayload]);
+    renderPayload(code, kind, source, sourceTheme, resolvedTheme);
+  }, [renderPayload, uiSettings.themeMode]);
 
   const sendPanelStatus = useCallback((open) => {
     const tabId = currentTabIdRef.current;
@@ -679,16 +746,26 @@ function App() {
   }, [postToSandbox, sendUiState]);
 
   useEffect(() => {
-    if (!ENABLE_PICKER) return;
-    const canPick = latestPayload?.language === "html";
-    if (!canPick && pickerActive) {
+    if (isPickerDisabled && pickerActive) {
       dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
     }
-  }, [latestPayload?.language, pickerActive]);
+  }, [isPickerDisabled, pickerActive]);
+
+  useEffect(() => {
+    if (isFreezeDisabled && canvasFrozen) {
+      dispatchInteraction({ type: "TOGGLE_FROZEN" });
+    }
+  }, [canvasFrozen, isFreezeDisabled]);
 
   useEffect(() => {
     sendUiState();
   }, [sendUiState]);
+
+  useEffect(() => {
+    const payload = latestPayloadRef.current;
+    if (!payload?.code) return;
+    updateViewer(payload.code, payload.language, payload.url, payload.theme);
+  }, [uiSettings.themeMode, updateViewer]);
 
   useEffect(() => {
     const handleMessage = (event) => {
@@ -722,6 +799,32 @@ function App() {
         return;
       }
 
+      if (data.type === "PRISM_RUNTIME_CAPABILITIES") {
+        const caps = data.capabilities || {};
+        setRuntimeCapabilities({
+          picker: caps.picker !== false,
+          snapshot: caps.snapshot !== false,
+          freeze: caps.freeze !== false,
+          reasons: caps.reasons && typeof caps.reasons === "object" ? caps.reasons : {},
+        });
+        return;
+      }
+
+      if (data.type === "PRISM_CAPTURE_UNSUPPORTED") {
+        pendingSnapshotActionRef.current = null;
+        snapshotCooldownRef.current = 0;
+        showToast(data.reason || "Snapshot unavailable for current render.");
+        return;
+      }
+
+      if (data.type === "PRISM_PICKER_UNSUPPORTED") {
+        if (pickerActive) {
+          dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
+        }
+        showToast(data.reason || "Picker unavailable for current render.");
+        return;
+      }
+
       if (data.type === "PRISM_EXPORT_FOR_CAPTURE") {
         const action = pendingSnapshotActionRef.current || "download";
         pendingSnapshotActionRef.current = null;
@@ -736,11 +839,16 @@ function App() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
+  }, [pickerActive, returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
 
   const handleSnapshot = useCallback((action = "download") => {
     const viewer = viewerRef.current;
     if (!viewer || !viewer.contentWindow || !viewerReadyRef.current) return;
+    if (isSnapshotDisabled) {
+      const reason = runtimeCapabilities?.reasons?.snapshot;
+      if (reason) showToast(reason);
+      return;
+    }
     if (pendingSnapshotActionRef.current || Date.now() < snapshotCooldownRef.current) {
       showToast("Processing... please wait.");
       return;
@@ -749,7 +857,7 @@ function App() {
     snapshotCooldownRef.current = Date.now() + SNAPSHOT_COOLDOWN_MS;
     pendingSnapshotActionRef.current = action;
     viewer.contentWindow.postMessage({ type: "PRISM_SNAPSHOT" }, "*");
-  }, [flashCapture, showToast]);
+  }, [flashCapture, isSnapshotDisabled, runtimeCapabilities?.reasons?.snapshot, showToast]);
 
   const handleSaveHtml = useCallback(() => {
     const payload = latestPayloadRef.current;
@@ -766,11 +874,15 @@ function App() {
     );
   }, []);
 
-  const handleThemeChange = useCallback((nextTheme) => {
-    const resolvedTheme = nextTheme === "light" ? "light" : "dark";
-    localStorage.setItem("prism-expert-theme", resolvedTheme);
-    applyGlobalTheme(resolvedTheme);
-  }, [applyGlobalTheme]);
+  const handleThemeModeChange = useCallback((nextThemeMode) => {
+    const resolvedThemeMode = VALID_THEME_MODES.includes(nextThemeMode)
+      ? nextThemeMode
+      : "detect";
+    setUiSettings((prev) => ({
+      ...prev,
+      themeMode: resolvedThemeMode,
+    }));
+  }, []);
 
   const handleCodeUpdate = useCallback((newCode) => {
     const payload = latestPayloadRef.current;
@@ -871,16 +983,25 @@ function App() {
 
   const handlePickerToggle = useCallback(() => {
     if (!ENABLE_PICKER) return;
-    if (latestPayload?.language !== "html") return;
+    if (isPickerDisabled) {
+      const reason = runtimeCapabilities?.reasons?.picker;
+      if (reason) showToast(reason);
+      return;
+    }
     dispatchInteraction({
       type: "TOGGLE_PICKER",
       autoPause: uiSettings.pickerAutoPause,
     });
-  }, [latestPayload?.language, uiSettings.pickerAutoPause]);
+  }, [isPickerDisabled, runtimeCapabilities?.reasons?.picker, showToast, uiSettings.pickerAutoPause]);
 
   const handleFreezeToggle = useCallback(() => {
+    if (isFreezeDisabled) {
+      const reason = runtimeCapabilities?.reasons?.freeze;
+      if (reason) showToast(reason);
+      return;
+    }
     dispatchInteraction({ type: "TOGGLE_FROZEN" });
-  }, []);
+  }, [isFreezeDisabled, runtimeCapabilities?.reasons?.freeze, showToast]);
 
   const handleToggleSetting = useCallback((key) => {
     setUiSettings((prev) => ({
@@ -924,8 +1045,6 @@ function App() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [sendPanelStatus]);
 
-  const isPickerDisabled = latestPayload?.language !== "html";
-
   if (isWindowMode) {
     return (
       <div className="prism-window">
@@ -945,11 +1064,6 @@ function App() {
   return (
     <div className="panel-shell">
       <ToastComponent />
-      <div
-        id="prism-capture-flash"
-        ref={flashRef}
-        onAnimationEnd={handleFlashAnimationEnd}
-      />
       <Header
         onSaveHtml={handleSaveHtml}
         onSnapshot={() => handleSnapshot("download")}
@@ -959,17 +1073,27 @@ function App() {
         pickerActive={pickerActive}
         onPickerToggle={handlePickerToggle}
         isPickerDisabled={isPickerDisabled}
+        isSnapshotDisabled={isSnapshotDisabled}
+        isFreezeDisabled={isFreezeDisabled}
+        isExportPromptDisabled={isExportPromptDisabled}
         instructionCount={Object.keys(instructions).length}
         canvasFrozen={canvasFrozen}
         onFreezeToggle={handleFreezeToggle}
         uiSettings={uiSettings}
         onToggleSetting={handleToggleSetting}
         onUpdateSetting={handleUpdateSetting}
-        theme={expertTheme}
-        onThemeChange={handleThemeChange}
+        themeMode={uiSettings.themeMode}
+        onThemeModeChange={handleThemeModeChange}
       />
       <div className="viewer-container">
-        <Viewer ref={viewerRef} onReady={handleViewerReady} />
+        <div className="viewer-frame">
+          <Viewer ref={viewerRef} onReady={handleViewerReady} />
+          <div
+            id="prism-capture-flash"
+            ref={flashRef}
+            onAnimationEnd={handleFlashAnimationEnd}
+          />
+        </div>
         {activeInstructionLine !== null && (
           <FloatingInput
             line={activeInstructionLine}
@@ -987,7 +1111,7 @@ function App() {
         <ExpertEditor
           code={latestPayload?.code || ""}
           onCodeUpdate={handleCodeUpdate}
-          theme={expertTheme}
+          theme={activeTheme}
           focusLine={focusLine}
           focusToken={focusToken}
         />
