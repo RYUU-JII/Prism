@@ -9,6 +9,76 @@ import { useToast } from './hooks/useToast.jsx';
 const ENABLE_EXPERT_MODE = false;
 const ENABLE_PICKER = true;
 const SNAPSHOT_COOLDOWN_MS = 900;
+const UI_SETTINGS_KEY = "prism-ui-settings-v3";
+const DEFAULT_UI_SETTINGS = {
+  dimMarkersWhilePlaying: true,
+  lockInteractionsWhenPaused: true,
+  feedbackIntensity: "medium",
+  keepPickerActiveAfterSelect: true,
+  exportPromptLevel: 2,
+  pickerAutoPause: false,
+  pickerHighlight: {
+    strength: "medium",
+    color: "#14b8a6",
+  },
+};
+
+function loadUiSettings() {
+  try {
+    const raw = localStorage.getItem(UI_SETTINGS_KEY);
+    if (!raw) return DEFAULT_UI_SETTINGS;
+    const parsed = JSON.parse(raw);
+    const exportPromptLevel = [1, 2, 3].includes(Number(parsed?.exportPromptLevel))
+      ? Number(parsed.exportPromptLevel)
+      : DEFAULT_UI_SETTINGS.exportPromptLevel;
+    const feedbackIntensity = ["low", "medium", "high"].includes(parsed?.feedbackIntensity)
+      ? parsed.feedbackIntensity
+      : DEFAULT_UI_SETTINGS.feedbackIntensity;
+    const legacyStrength = ["subtle", "medium", "strong"].includes(parsed?.highlightStrength)
+      ? parsed.highlightStrength
+      : DEFAULT_UI_SETTINGS.pickerHighlight.strength;
+    const legacyColor =
+      typeof parsed?.highlightColor === "string" && parsed.highlightColor.trim()
+        ? parsed.highlightColor
+        : DEFAULT_UI_SETTINGS.pickerHighlight.color;
+    const pickerHighlightRaw =
+      parsed?.pickerHighlight && typeof parsed.pickerHighlight === "object"
+        ? parsed.pickerHighlight
+        : null;
+    const pickerHighlight = {
+      strength: ["subtle", "medium", "strong"].includes(pickerHighlightRaw?.strength)
+        ? pickerHighlightRaw.strength
+        : legacyStrength,
+      color:
+        typeof pickerHighlightRaw?.color === "string" && pickerHighlightRaw.color.trim()
+          ? pickerHighlightRaw.color
+          : legacyColor,
+    };
+    return {
+      dimMarkersWhilePlaying:
+        typeof parsed?.dimMarkersWhilePlaying === "boolean"
+          ? parsed.dimMarkersWhilePlaying
+          : DEFAULT_UI_SETTINGS.dimMarkersWhilePlaying,
+      lockInteractionsWhenPaused:
+        typeof parsed?.lockInteractionsWhenPaused === "boolean"
+          ? parsed.lockInteractionsWhenPaused
+          : DEFAULT_UI_SETTINGS.lockInteractionsWhenPaused,
+      feedbackIntensity,
+      keepPickerActiveAfterSelect:
+        typeof parsed?.keepPickerActiveAfterSelect === "boolean"
+          ? parsed.keepPickerActiveAfterSelect
+          : DEFAULT_UI_SETTINGS.keepPickerActiveAfterSelect,
+      exportPromptLevel,
+      pickerAutoPause:
+        typeof parsed?.pickerAutoPause === "boolean"
+          ? parsed.pickerAutoPause
+          : DEFAULT_UI_SETTINGS.pickerAutoPause,
+      pickerHighlight,
+    };
+  } catch (err) {
+    return DEFAULT_UI_SETTINGS;
+  }
+}
 
 function normalizeSource(url) {
   if (!url) return "";
@@ -200,7 +270,11 @@ function interactionReducer(state, action) {
           activeElementRect: null,
         };
       }
-      return { ...state, pickerActive: true };
+      return {
+        ...state,
+        pickerActive: true,
+        canvasFrozen: action.autoPause ? true : state.canvasFrozen,
+      };
     }
     case "TOGGLE_FROZEN":
       return { ...state, canvasFrozen: !state.canvasFrozen };
@@ -208,6 +282,8 @@ function interactionReducer(state, action) {
       const line = Number(action.line) || 1;
       return {
         ...state,
+        pickerActive:
+          action.keepPickerActiveAfterSelect === false ? false : state.pickerActive,
         focusLine: line,
         focusToken: state.focusToken + 1,
         activeInstructionLine: line,
@@ -251,6 +327,7 @@ function App() {
     const storedTheme = localStorage.getItem("prism-expert-theme");
     return storedTheme === "light" || storedTheme === "dark" ? storedTheme : "dark";
   });
+  const [uiSettings, setUiSettings] = useState(() => loadUiSettings());
   const [interactionState, dispatchInteraction] = useReducer(
     interactionReducer,
     initialInteractionState
@@ -298,6 +375,14 @@ function App() {
   }, [expertTheme]);
 
   useEffect(() => {
+    document.body.dataset.feedbackIntensity = uiSettings.feedbackIntensity || "medium";
+  }, [uiSettings.feedbackIntensity]);
+
+  useEffect(() => {
+    localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(uiSettings));
+  }, [uiSettings]);
+
+  useEffect(() => {
     if (!isWindowMode) return;
     document.body.classList.add("prism-window");
     return () => {
@@ -309,8 +394,15 @@ function App() {
     const el = flashRef.current;
     if (!el) return;
     el.classList.remove("active");
-    void el.offsetWidth;
-    el.classList.add("active");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        el.classList.add("active");
+      });
+    });
+  }, []);
+
+  const handleFlashAnimationEnd = useCallback((event) => {
+    event.currentTarget.classList.remove("active");
   }, []);
 
   const applyGlobalTheme = useCallback((theme) => {
@@ -336,8 +428,9 @@ function App() {
       frozen: Boolean(canvasFrozen),
       instructions,
       instructionsCount: Object.keys(instructions).length,
+      settings: uiSettings,
     };
-  }, [canvasFrozen, instructions, pickerActive]);
+  }, [canvasFrozen, instructions, pickerActive, uiSettings]);
 
   const sendUiState = useCallback((payloadOverride) => {
     const viewer = viewerRef.current;
@@ -614,6 +707,7 @@ function App() {
           type: "PICKER_SELECT",
           line: data.line,
           rect: data.rect || null,
+          keepPickerActiveAfterSelect: uiSettings.keepPickerActiveAfterSelect,
         });
         return;
       }
@@ -642,7 +736,7 @@ function App() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [returnToSourceTab, showToast]);
+  }, [returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
 
   const handleSnapshot = useCallback((action = "download") => {
     const viewer = viewerRef.current;
@@ -672,11 +766,11 @@ function App() {
     );
   }, []);
 
-  const handleThemeToggle = useCallback(() => {
-    const newTheme = expertTheme === "dark" ? "light" : "dark";
-    localStorage.setItem("prism-expert-theme", newTheme);
-    applyGlobalTheme(newTheme);
-  }, [applyGlobalTheme, expertTheme]);
+  const handleThemeChange = useCallback((nextTheme) => {
+    const resolvedTheme = nextTheme === "light" ? "light" : "dark";
+    localStorage.setItem("prism-expert-theme", resolvedTheme);
+    applyGlobalTheme(resolvedTheme);
+  }, [applyGlobalTheme]);
 
   const handleCodeUpdate = useCallback((newCode) => {
     const payload = latestPayloadRef.current;
@@ -711,6 +805,9 @@ function App() {
       return;
     }
 
+    const detailLevel = [1, 2, 3].includes(Number(uiSettings.exportPromptLevel))
+      ? Number(uiSettings.exportPromptLevel)
+      : 2;
     const lines = payload.code.split('\n');
     let prompt = "Please modify the following HTML based on the provided instructions.\n\n";
 
@@ -719,28 +816,27 @@ function App() {
       prompt += `- Line ${line}: ${text}\n`;
     });
 
-    prompt += "\n### TARGET SNIPPETS\n";
-    Object.keys(instructions).forEach(lineNum => {
-      const idx = Number(lineNum) - 1;
-      const start = Math.max(0, idx - 2);
-      const end = Math.min(lines.length, idx + 3);
-      prompt += `--- Snippet around Line ${lineNum} ---\n`;
-      prompt += lines.slice(start, end).join('\n');
-      prompt += "\n\n";
-    });
+    if (detailLevel >= 2) {
+      prompt += "\n### TARGET SNIPPETS\n";
+      Object.keys(instructions).forEach(lineNum => {
+        const idx = Number(lineNum) - 1;
+        const start = Math.max(0, idx - 2);
+        const end = Math.min(lines.length, idx + 3);
+        prompt += `--- Snippet around Line ${lineNum} ---\n`;
+        prompt += lines.slice(start, end).join('\n');
+        prompt += "\n\n";
+      });
+    }
 
-    // Simple Skeleton logic (remove attributes, keep tags)
-    const skeleton = payload.code
-      .replace(/<([a-z0-9-]+)[^>]*>/gi, '<$1>')
-      .replace(/<\/([a-z0-9-]+)>/gi, '</$1>');
-
-    prompt += "### FULL STRUCTURE (SKELETON)\n";
-    prompt += skeleton;
+    if (detailLevel >= 3) {
+      prompt += "### FULL CODE\n";
+      prompt += payload.code;
+    }
 
     navigator.clipboard.writeText(prompt).then(() => {
       showToast("Prompt copied to clipboard!");
     });
-  }, [instructions, showToast]);
+  }, [instructions, showToast, uiSettings.exportPromptLevel]);
 
   const handleOpenWindow = useCallback(() => {
     const payload = latestPayloadRef.current;
@@ -776,11 +872,48 @@ function App() {
   const handlePickerToggle = useCallback(() => {
     if (!ENABLE_PICKER) return;
     if (latestPayload?.language !== "html") return;
-    dispatchInteraction({ type: "TOGGLE_PICKER" });
-  }, [latestPayload?.language]);
+    dispatchInteraction({
+      type: "TOGGLE_PICKER",
+      autoPause: uiSettings.pickerAutoPause,
+    });
+  }, [latestPayload?.language, uiSettings.pickerAutoPause]);
 
   const handleFreezeToggle = useCallback(() => {
     dispatchInteraction({ type: "TOGGLE_FROZEN" });
+  }, []);
+
+  const handleToggleSetting = useCallback((key) => {
+    setUiSettings((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  }, []);
+
+  const handleUpdateSetting = useCallback((key, value) => {
+    setUiSettings((prev) => {
+      if (key === "pickerHighlightStrength") {
+        return {
+          ...prev,
+          pickerHighlight: {
+            ...(prev.pickerHighlight || DEFAULT_UI_SETTINGS.pickerHighlight),
+            strength: value,
+          },
+        };
+      }
+      if (key === "pickerHighlightColor") {
+        return {
+          ...prev,
+          pickerHighlight: {
+            ...(prev.pickerHighlight || DEFAULT_UI_SETTINGS.pickerHighlight),
+            color: value,
+          },
+        };
+      }
+      return {
+        ...prev,
+        [key]: value,
+      };
+    });
   }, []);
 
   useEffect(() => {
@@ -812,13 +945,16 @@ function App() {
   return (
     <div className="panel-shell">
       <ToastComponent />
-      <div id="prism-capture-flash" ref={flashRef} />
+      <div
+        id="prism-capture-flash"
+        ref={flashRef}
+        onAnimationEnd={handleFlashAnimationEnd}
+      />
       <Header
         onSaveHtml={handleSaveHtml}
         onSnapshot={() => handleSnapshot("download")}
         onCopy={() => handleSnapshot("clipboard")}
         onOpenWindow={handleOpenWindow}
-        onThemeToggle={handleThemeToggle}
         onExportPrompt={handleExportPrompt}
         pickerActive={pickerActive}
         onPickerToggle={handlePickerToggle}
@@ -826,6 +962,11 @@ function App() {
         instructionCount={Object.keys(instructions).length}
         canvasFrozen={canvasFrozen}
         onFreezeToggle={handleFreezeToggle}
+        uiSettings={uiSettings}
+        onToggleSetting={handleToggleSetting}
+        onUpdateSetting={handleUpdateSetting}
+        theme={expertTheme}
+        onThemeChange={handleThemeChange}
       />
       <div className="viewer-container">
         <Viewer ref={viewerRef} onReady={handleViewerReady} />
