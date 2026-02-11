@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
   <meta charset="utf-8" />
   <title>Prism Sandbox</title>
   <style id="prism-internal-styles">
-    /* --- [1. 기본 레이아웃 스타일] --- */
+    /* --- [1. 湲곕낯 ?덉씠?꾩썐 ?ㅽ??? --- */
     html,
     body {
       margin: 0;
@@ -18,7 +18,7 @@
       color: #111;
     }
 
-    /* 핵심 컨테이너 스타일 - 부모 창에서도 이 스타일이 적용되어야 합니다 */
+    /* ?듭떖 而⑦뀒?대꼫 ?ㅽ???- 遺紐?李쎌뿉?쒕룄 ???ㅽ??쇱씠 ?곸슜?섏뼱???⑸땲??*/
     #prism-root {
       height: 100%;
       min-height: 100vh;
@@ -37,7 +37,7 @@
       display: contents;
     }
 
-    /* 유틸리티 및 에러 스타일 */
+    /* ?좏떥由ы떚 諛??먮윭 ?ㅽ???*/
     .prism-empty {
       background: #f6f7fb;
       color: #5c6370;
@@ -62,7 +62,7 @@
       overflow: auto;
     }
 
-    /* 다크모드 대응 */
+    /* ?ㅽ겕紐⑤뱶 ???*/
     .dark #prism-root {
       background: #111;
       color: #fff;
@@ -77,7 +77,7 @@
   </div>
 
   <script>
-    /* --- [2. 자바스크립트 로직 시작] --- */
+    /* --- [2. ?먮컮?ㅽ겕由쏀듃 濡쒖쭅 ?쒖옉] --- */
     document.documentElement.lang = navigator.language || "en";
 
     const root = document.getElementById("prism-root");
@@ -85,16 +85,39 @@
     const libraryRegistry = new Map();
     const renderers = new Map();
     let activeReactRoot = null;
+    const DEFAULT_UI_SETTINGS = {
+      dimMarkersWhilePlaying: true,
+      lockInteractionsWhenPaused: true,
+      keepPickerActiveAfterSelect: true
+    };
+    function normalizeUiSettings(settings) {
+      const safe = settings || {};
+      return {
+        dimMarkersWhilePlaying:
+          typeof safe.dimMarkersWhilePlaying === "boolean"
+            ? safe.dimMarkersWhilePlaying
+            : DEFAULT_UI_SETTINGS.dimMarkersWhilePlaying,
+        lockInteractionsWhenPaused:
+          typeof safe.lockInteractionsWhenPaused === "boolean"
+            ? safe.lockInteractionsWhenPaused
+            : DEFAULT_UI_SETTINGS.lockInteractionsWhenPaused,
+        keepPickerActiveAfterSelect:
+          typeof safe.keepPickerActiveAfterSelect === "boolean"
+            ? safe.keepPickerActiveAfterSelect
+            : DEFAULT_UI_SETTINGS.keepPickerActiveAfterSelect
+      };
+    }
     let uiState = {
       pickerActive: false,
       frozen: false,
-      instructions: {}
+      instructions: {},
+      settings: { ...DEFAULT_UI_SETTINGS }
     };
     const babelCache = new Map();
     const BABEL_CACHE_MAX = 12;
     const MAX_BABEL_CHARS = 120000;
 
-    // 라이브러리 경로 정의
+    // ?쇱씠釉뚮윭由?寃쎈줈 ?뺤쓽
     const sources = {
       babel: "vendor/babel.min.js",
       react: "vendor/react.production.min.js",
@@ -103,7 +126,7 @@
       html2canvas: "vendor/html2canvas.min.js"
     };
 
-    // 라이브러리 동적 로더
+    // ?쇱씠釉뚮윭由??숈쟻 濡쒕뜑
     function loadScript(src) {
       if (scriptCache.has(src)) return scriptCache.get(src);
       const promise = new Promise((resolve, reject) => {
@@ -123,7 +146,7 @@
       await Promise.all(scripts.map(src => loadScript(src)));
     }
 
-    // --- [3. 코드 렌더링 핵심 로직] ---
+    // --- [3. 肄붾뱶 ?뚮뜑留??듭떖 濡쒖쭅] ---
 
     function stripImports(code) { return (code || "").replace(/^\s*import\s+[^;]+;?\s*$/gm, ""); }
     function normalizeExports(code) { return (code || "").replace(/^\s*export\s+default\s+/gm, "const PrismDefault = "); }
@@ -137,7 +160,7 @@
       return out;
     }
 
-    // React 렌더러
+    // React ?뚮뜑??
     async function renderReact(code, theme) {
       try {
         if ((code || "").length > MAX_BABEL_CHARS) throw new Error("Code is too large.");
@@ -172,7 +195,7 @@
       }
     }
 
-    // HTML 렌더러 (iframe 모드)
+    // HTML ?뚮뜑??(iframe 紐⑤뱶)
     async function renderHtml(code, theme) {
       if (activeReactRoot) { activeReactRoot.unmount(); activeReactRoot = null; }
       root.innerHTML = "";
@@ -184,7 +207,7 @@
       frame.style.height = "100%";
       frame.style.border = "0";
 
-      // [수정됨] iframe 내부 브릿지: 데스크톱 너비(1280px) 전송
+      // [?섏젙?? iframe ?대? 釉뚮┸吏: ?곗뒪?ы넲 ?덈퉬(1280px) ?꾩넚
       const snapshotBridge = `<script>
           window.addEventListener("message", function(event) {
             if (event.source !== parent || !event.data || event.data.type !== "PRISM_SNAPSHOT") return;
@@ -202,7 +225,7 @@
                 return out;
               };
 
-              // 데스크톱 캡처를 위한 강제 너비 설정
+              // ?곗뒪?ы넲 罹≪쿂瑜??꾪븳 媛뺤젣 ?덈퉬 ?ㅼ젙
               const VIRTUAL_WIDTH = 1280;
 
               parent.postMessage({
@@ -221,8 +244,8 @@
             } catch (e) { console.error(e); }
           });
 
-          // 키보드 포커스가 iframe 안으로 들어가면 부모(sandbox)에서 keydown을 못 받으므로,
-          // iframe에서 직접 잡아서 parent로 전달합니다.
+          // ?ㅻ낫???ъ빱?ㅺ? iframe ?덉쑝濡??ㅼ뼱媛硫?遺紐?sandbox)?먯꽌 keydown??紐?諛쏆쑝誘濡?
+          // iframe?먯꽌 吏곸젒 ?≪븘??parent濡??꾨떖?⑸땲??
           window.addEventListener("keydown", function(event) {
             if (event.altKey && event.key === "ArrowLeft") {
               try {
@@ -241,8 +264,129 @@
           let prismInteractionLockStyle = null;
           let prismInstructions = {};
           let prismFrozen = false;
+          let prismSettings = {
+            dimMarkersWhilePlaying: true,
+            lockInteractionsWhenPaused: true,
+            keepPickerActiveAfterSelect: true,
+            highlightStrength: "medium",
+            highlightColor: "#14b8a6"
+          };
 
           let prismInstructionStyle = null;
+
+          function normalizeSettings(settings) {
+            const safe = settings || {};
+            const pickerHighlight =
+              safe.pickerHighlight && typeof safe.pickerHighlight === "object"
+                ? safe.pickerHighlight
+                : {};
+            const highlightStrength =
+              ["subtle", "medium", "strong"].includes(pickerHighlight.strength)
+                ? pickerHighlight.strength
+                : ["subtle", "medium", "strong"].includes(safe.highlightStrength)
+                  ? safe.highlightStrength
+                : "medium";
+            const highlightColor =
+              typeof pickerHighlight.color === "string" && pickerHighlight.color.trim()
+                ? pickerHighlight.color
+                : typeof safe.highlightColor === "string" && safe.highlightColor.trim()
+                  ? safe.highlightColor
+                : "#14b8a6";
+            return {
+              dimMarkersWhilePlaying:
+                typeof safe.dimMarkersWhilePlaying === "boolean"
+                  ? safe.dimMarkersWhilePlaying
+                  : true,
+              lockInteractionsWhenPaused:
+                typeof safe.lockInteractionsWhenPaused === "boolean"
+                  ? safe.lockInteractionsWhenPaused
+                  : true,
+              keepPickerActiveAfterSelect:
+                typeof safe.keepPickerActiveAfterSelect === "boolean"
+                  ? safe.keepPickerActiveAfterSelect
+                  : true,
+              highlightStrength,
+              highlightColor
+            };
+          }
+
+          function parseHexColor(hex) {
+            if (!hex) return null;
+            const raw = String(hex).replace("#", "").trim();
+            if (raw.length === 3) {
+              const r = parseInt(raw[0] + raw[0], 16);
+              const g = parseInt(raw[1] + raw[1], 16);
+              const b = parseInt(raw[2] + raw[2], 16);
+              if ([r, g, b].some((val) => Number.isNaN(val))) return null;
+              return { r, g, b };
+            }
+            if (raw.length === 6) {
+              const r = parseInt(raw.slice(0, 2), 16);
+              const g = parseInt(raw.slice(2, 4), 16);
+              const b = parseInt(raw.slice(4, 6), 16);
+              if ([r, g, b].some((val) => Number.isNaN(val))) return null;
+              return { r, g, b };
+            }
+            return null;
+          }
+
+          function hexToRgba(hex, alpha) {
+            const fallback = { r: 20, g: 184, b: 166 };
+            const rgb = parseHexColor(hex) || fallback;
+            return "rgba(" + rgb.r + ", " + rgb.g + ", " + rgb.b + ", " + alpha + ")";
+          }
+
+          function applyVisualSettings() {
+            const strengthMap = {
+              subtle: {
+                outlineWidth: 1,
+                alpha: 0.35,
+                mutedAlpha: 0.18,
+                badgeAlpha: 0.7,
+                badgeMutedAlpha: 0.5
+              },
+              medium: {
+                outlineWidth: 2,
+                alpha: 0.55,
+                mutedAlpha: 0.28,
+                badgeAlpha: 0.85,
+                badgeMutedAlpha: 0.65
+              },
+              strong: {
+                outlineWidth: 3,
+                alpha: 0.8,
+                mutedAlpha: 0.4,
+                badgeAlpha: 1,
+                badgeMutedAlpha: 0.75
+              }
+            };
+            const strength = strengthMap[prismSettings.highlightStrength] || strengthMap.medium;
+            const outlineWidth = strength.outlineWidth;
+            const offset = Math.max(1, outlineWidth);
+            const mutedOffset = Math.max(1, offset - 1);
+            const rootStyle = document.documentElement.style;
+            rootStyle.setProperty("--prism-marker-outline-style", "solid");
+            rootStyle.setProperty("--prism-marker-outline-width", String(outlineWidth) + "px");
+            rootStyle.setProperty("--prism-marker-outline-width-muted", String(Math.max(1, outlineWidth - 1)) + "px");
+            rootStyle.setProperty("--prism-marker-outline-offset", String(offset) + "px");
+            rootStyle.setProperty("--prism-marker-outline-offset-muted", String(mutedOffset) + "px");
+            rootStyle.setProperty(
+              "--prism-marker-color-rgba",
+              hexToRgba(prismSettings.highlightColor, strength.alpha)
+            );
+            rootStyle.setProperty(
+              "--prism-marker-color-muted-rgba",
+              hexToRgba(prismSettings.highlightColor, strength.mutedAlpha)
+            );
+            rootStyle.setProperty(
+              "--prism-marker-badge-bg",
+              hexToRgba(prismSettings.highlightColor, strength.badgeAlpha)
+            );
+            rootStyle.setProperty(
+              "--prism-marker-badge-muted-bg",
+              hexToRgba(prismSettings.highlightColor, strength.badgeMutedAlpha)
+            );
+          }
 
           function ensureInstructionStyles() {
             if (prismInstructionStyle) return;
@@ -250,20 +394,20 @@
             style.id = "prism-instruction-markers";
             style.textContent = [
               ".prism-has-instruction {",
-              "  outline: 2px solid rgba(20, 184, 166, 0.5) !important;",
-              "  outline-offset: 2px !important;",
+              "  outline: var(--prism-marker-outline-width) var(--prism-marker-outline-style) var(--prism-marker-color-rgba) !important;",
+              "  outline-offset: var(--prism-marker-outline-offset) !important;",
               "  cursor: pointer !important;",
               "}",
               "body.prism-markers-muted .prism-has-instruction {",
-              "  outline: 1px solid rgba(20, 184, 166, 0.28) !important;",
-              "  outline-offset: 1px !important;",
+              "  outline: var(--prism-marker-outline-width-muted) var(--prism-marker-outline-style) var(--prism-marker-color-muted-rgba) !important;",
+              "  outline-offset: var(--prism-marker-outline-offset-muted) !important;",
               "}",
               ".prism-has-instruction::after {",
               "  content: '\u2726';",
               "  position: absolute;",
               "  top: -6px;",
               "  right: -6px;",
-              "  background: #14b8a6;",
+              "  background: var(--prism-marker-badge-bg);",
               "  color: white;",
               "  font-size: 7px;",
               "  width: 12px;",
@@ -277,7 +421,7 @@
               "  pointer-events: none;",
               "}",
               "body.prism-markers-muted .prism-has-instruction::after {",
-              "  background: rgba(20, 184, 166, 0.72);",
+              "  background: var(--prism-marker-badge-muted-bg);",
               "  width: 10px;",
               "  height: 10px;",
               "  font-size: 6px;",
@@ -314,7 +458,10 @@
             }
 
             ensureInstructionStyles();
-            document.body.classList.toggle("prism-markers-muted", !prismFrozen);
+            document.body.classList.toggle(
+              "prism-markers-muted",
+              !prismFrozen && prismSettings.dimMarkersWhilePlaying
+            );
 
             keys.forEach(line => {
               const el = document.querySelector('[data-prism-line="' + line + '"]');
@@ -384,7 +531,7 @@
             overlay.style.width = rect.width + "px";
             overlay.style.height = rect.height + "px";
 
-            // 배경(html, body)일 경우 면 채우기 색상 제거 (눈부심 방지)
+            // Keep overlay transparent when targeting html/body.
             if (target === document.documentElement || target === document.body) {
               overlay.style.background = "transparent";
             } else {
@@ -448,7 +595,10 @@
           }
 
           function updateInteractionLock() {
-            const shouldLock = prismFrozen && !prismPickerActive;
+            const shouldLock =
+              prismSettings.lockInteractionsWhenPaused &&
+              prismFrozen &&
+              !prismPickerActive;
             if (shouldLock) {
               ensureInteractionLockStyles();
               document.body.classList.add("prism-interaction-locked");
@@ -475,6 +625,8 @@
 
           function applyUiState(nextState) {
             const safeState = nextState || {};
+            prismSettings = normalizeSettings(safeState.settings);
+            applyVisualSettings();
             prismInstructions = safeState.instructions || {};
             setPickerActive(Boolean(safeState.pickerActive));
             setFrozen(Boolean(safeState.frozen));
@@ -484,17 +636,17 @@
             const elements = document.elementsFromPoint(x, y);
             if (!elements || elements.length === 0) return null;
 
-            // 1. data-prism-line이 있는 가장 구체적인(리스트 상단부) 요소를 찾음
+            // 1. data-prism-line???덈뒗 媛??援ъ껜?곸씤(由ъ뒪???곷떒遺) ?붿냼瑜?李얠쓬
             for (const el of elements) {
               if (el === prismPickerOverlay) continue;
               if (el.hasAttribute("data-prism-line")) return el;
               
-              // 부모로 올라가며 data-prism-line이 있는지 확인 (closest)
+              // 遺紐⑤줈 ?щ씪媛硫?data-prism-line???덈뒗吏 ?뺤씤 (closest)
               const parentWithLine = el.closest("[data-prism-line]");
               if (parentWithLine) return parentWithLine;
             }
 
-            // 2. 만약 아무것도 소스코드와 매칭되지 않으면, 그냥 가장 위에 있는 유효한 요소 반환
+            // 2. 留뚯빟 ?꾨Т寃껊룄 ?뚯뒪肄붾뱶? 留ㅼ묶?섏? ?딆쑝硫? 洹몃깷 媛???꾩뿉 ?덈뒗 ?좏슚???붿냼 諛섑솚
             for (const el of elements) {
               if (el === prismPickerOverlay) continue;
               if (el === document.documentElement || el === document.body) continue;
@@ -538,7 +690,7 @@
 
           document.addEventListener("click", function(event) {
             if (!prismPickerActive) {
-              // ... (이미 구현된 메모 마커 클릭 로직) ...
+              // ... (?대? 援ы쁽??硫붾え 留덉빱 ?대┃ 濡쒖쭅) ...
               const memoEl = event.target.closest && event.target.closest(".prism-has-instruction");
               if (memoEl) {
                 const line = Number(memoEl.getAttribute("data-prism-line")) || 1;
@@ -574,7 +726,11 @@
           }, true);
 
           document.addEventListener("keydown", function(event) {
-            if (!prismFrozen || prismPickerActive) return;
+            if (
+              !prismSettings.lockInteractionsWhenPaused ||
+              !prismFrozen ||
+              prismPickerActive
+            ) return;
             if (event.altKey && event.key === "ArrowLeft") return;
             event.preventDefault();
             event.stopPropagation();
@@ -612,9 +768,9 @@
       });
     }
 
-    // --- [4. 캡처 데이터 추출 및 전송 로직] ---
+    // --- [4. 罹≪쿂 ?곗씠??異붿텧 諛??꾩넚 濡쒖쭅] ---
 
-    // [수정됨] 메인 캡처 함수: 데스크톱 너비(1280px) 전송
+    // [?섏젙?? 硫붿씤 罹≪쿂 ?⑥닔: ?곗뒪?ы넲 ?덈퉬(1280px) ?꾩넚
     function captureSnapshot() {
       const frame = root.querySelector("iframe");
 
@@ -657,7 +813,7 @@
           "letterSpacing"
         ];
 
-        // 데스크톱 캡처를 위한 강제 너비 설정
+        // ?곗뒪?ы넲 罹≪쿂瑜??꾪븳 媛뺤젣 ?덈퉬 ?ㅼ젙
         const VIRTUAL_WIDTH = 1280;
         const height = Math.max(root.scrollHeight, root.offsetHeight, 1);
 
@@ -681,17 +837,17 @@
 
         window.parent.postMessage(payload, "*");
       } catch (error) {
-        console.error("[Prism Sandbox] 추출 실패:", error);
+        console.error("[Prism Sandbox] 異붿텧 ?ㅽ뙣:", error);
       }
     }
 
-    // --- [5. 메시지 리스너 및 초기화] ---
+    // --- [5. 硫붿떆吏 由ъ뒪??諛?珥덇린?? ---
 
     window.addEventListener("message", (event) => {
       const data = event.data || {};
       const iframeWindow = root.querySelector("iframe")?.contentWindow;
 
-      // iframe 내부에서 올라온 캡처 데이터를 부모 창으로 전달
+      // iframe ?대??먯꽌 ?щ씪??罹≪쿂 ?곗씠?곕? 遺紐?李쎌쑝濡??꾨떖
       if (data.type === "PRISM_EXPORT_FOR_CAPTURE" && event.source === iframeWindow) {
         window.parent.postMessage(data, "*");
         return;
@@ -707,7 +863,7 @@
         return;
       }
 
-      // iframe 내부(HTML srcdoc)에서 온 "돌아가기" 요청을 부모로 전달
+      // iframe ?대?(HTML srcdoc)?먯꽌 ??"?뚯븘媛湲? ?붿껌??遺紐⑤줈 ?꾨떖
       if (data.type === "PRISM_RETURN_REQUEST" && event.source === iframeWindow) {
         window.parent.postMessage({ type: "PRISM_RETURN_REQUEST" }, "*");
         return;
@@ -717,7 +873,8 @@
         uiState = {
           pickerActive: Boolean(data.pickerActive),
           frozen: Boolean(data.frozen),
-          instructions: data.instructions || {}
+          instructions: data.instructions || {},
+          settings: normalizeUiSettings(data.settings)
         };
         if (iframeWindow) {
           iframeWindow.postMessage({ type: "PRISM_UI_STATE", ...uiState }, "*");
@@ -787,3 +944,6 @@
 </body>
 
 </html>
+
+
+
