@@ -85,7 +85,11 @@
     const libraryRegistry = new Map();
     const renderers = new Map();
     let activeReactRoot = null;
-    let pickerActive = false;
+    let uiState = {
+      pickerActive: false,
+      frozen: false,
+      instructions: {}
+    };
     const babelCache = new Map();
     const BABEL_CACHE_MAX = 12;
     const MAX_BABEL_CHARS = 120000;
@@ -233,6 +237,8 @@
           let prismPickerOverlay = null;
           let prismPickerTarget = null;
           let prismMotionStyle = null;
+          let prismPickerPointerStyle = null;
+          let prismInteractionLockStyle = null;
           let prismInstructions = {};
           let prismFrozen = false;
 
@@ -246,8 +252,11 @@
               ".prism-has-instruction {",
               "  outline: 2px solid rgba(20, 184, 166, 0.5) !important;",
               "  outline-offset: 2px !important;",
-              "  position: relative !important;",
               "  cursor: pointer !important;",
+              "}",
+              "body.prism-markers-muted .prism-has-instruction {",
+              "  outline: 1px solid rgba(20, 184, 166, 0.28) !important;",
+              "  outline-offset: 1px !important;",
               "}",
               ".prism-has-instruction::after {",
               "  content: '\u2726';",
@@ -266,6 +275,15 @@
               "  box-shadow: 0 2px 4px rgba(0,0,0,0.2);",
               "  z-index: 1000;",
               "  pointer-events: none;",
+              "}",
+              "body.prism-markers-muted .prism-has-instruction::after {",
+              "  background: rgba(20, 184, 166, 0.72);",
+              "  width: 10px;",
+              "  height: 10px;",
+              "  font-size: 6px;",
+              "  top: -5px;",
+              "  right: -5px;",
+              "  box-shadow: none;",
               "}"
             ].join("\\n");
             document.head.appendChild(style);
@@ -279,29 +297,34 @@
           }
 
           function applyMarkers() {
-            // Remove old markers
+            // Remove old markers and reset inline positions
             document.querySelectorAll(".prism-has-instruction").forEach(el => {
               el.classList.remove("prism-has-instruction");
+              if (el.dataset.prismDidSetPosition) {
+                el.style.position = "";
+                delete el.dataset.prismDidSetPosition;
+              }
             });
-
-            // Only show markers when canvas is frozen
-            if (!prismFrozen) {
-              removeInstructionStyles();
-              return;
-            }
 
             const keys = Object.keys(prismInstructions);
             if (keys.length === 0) {
+              document.body.classList.remove("prism-markers-muted");
               removeInstructionStyles();
               return;
             }
 
             ensureInstructionStyles();
+            document.body.classList.toggle("prism-markers-muted", !prismFrozen);
 
             keys.forEach(line => {
               const el = document.querySelector('[data-prism-line="' + line + '"]');
               if (el) {
                 el.classList.add("prism-has-instruction");
+                const style = window.getComputedStyle(el);
+                if (style.position === "static") {
+                  el.style.position = "relative";
+                  el.dataset.prismDidSetPosition = "true";
+                }
               }
             });
           }
@@ -332,11 +355,13 @@
             prismFrozen = Boolean(frozen);
             setMotionFreeze(prismFrozen);
             applyMarkers();
+            updateInteractionLock();
           }
 
           function ensurePickerOverlay() {
             if (prismPickerOverlay) return prismPickerOverlay;
             const overlay = document.createElement("div");
+            overlay.dataset.prismPickerOverlay = "true";
             overlay.style.position = "fixed";
             overlay.style.zIndex = "2147483647";
             overlay.style.pointerEvents = "none";
@@ -374,22 +399,116 @@
             prismPickerTarget = null;
           }
 
+          function ensurePickerPointerStyles() {
+            if (prismPickerPointerStyle) return;
+            const style = document.createElement("style");
+            style.id = "prism-picker-pointer-style";
+            style.textContent = [
+              "[data-prism-line], [data-prism-line] * {",
+              "  pointer-events: auto !important;",
+              "}",
+              "[data-prism-picker-overlay='true'] {",
+              "  pointer-events: none !important;",
+              "}"
+            ].join("\\n");
+            document.head.appendChild(style);
+            prismPickerPointerStyle = style;
+          }
+
+          function removePickerPointerStyles() {
+            if (!prismPickerPointerStyle) return;
+            prismPickerPointerStyle.remove();
+            prismPickerPointerStyle = null;
+          }
+
+          function ensureInteractionLockStyles() {
+            if (prismInteractionLockStyle) return;
+            const style = document.createElement("style");
+            style.id = "prism-interaction-lock-style";
+            style.textContent = [
+              "body.prism-interaction-locked *, body.prism-interaction-locked *::before, body.prism-interaction-locked *::after {",
+              "  pointer-events: none !important;",
+              "  user-select: none !important;",
+              "  -webkit-user-select: none !important;",
+              "}",
+              "body.prism-interaction-locked .prism-has-instruction,",
+              "body.prism-interaction-locked .prism-has-instruction * {",
+              "  pointer-events: auto !important;",
+              "  cursor: pointer !important;",
+              "}"
+            ].join("\\n");
+            document.head.appendChild(style);
+            prismInteractionLockStyle = style;
+          }
+
+          function removeInteractionLockStyles() {
+            if (!prismInteractionLockStyle) return;
+            prismInteractionLockStyle.remove();
+            prismInteractionLockStyle = null;
+          }
+
+          function updateInteractionLock() {
+            const shouldLock = prismFrozen && !prismPickerActive;
+            if (shouldLock) {
+              ensureInteractionLockStyles();
+              document.body.classList.add("prism-interaction-locked");
+              if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) {
+                document.activeElement.blur();
+              }
+              return;
+            }
+            document.body.classList.remove("prism-interaction-locked");
+            removeInteractionLockStyles();
+          }
+
           function setPickerActive(active) {
             prismPickerActive = Boolean(active);
             document.body.style.cursor = prismPickerActive ? "crosshair" : "";
-            if (!prismPickerActive) {
+            if (prismPickerActive) {
+              ensurePickerPointerStyles();
+            } else {
+              removePickerPointerStyles();
               clearPickerOverlay();
             }
+            updateInteractionLock();
           }
 
-          function pickTarget(rawTarget) {
-            if (!(rawTarget instanceof Element)) return null;
-            return rawTarget.closest("[data-prism-line]") || rawTarget;
+          function applyUiState(nextState) {
+            const safeState = nextState || {};
+            prismInstructions = safeState.instructions || {};
+            setPickerActive(Boolean(safeState.pickerActive));
+            setFrozen(Boolean(safeState.frozen));
+          }
+
+          function findTargetAt(x, y) {
+            const elements = document.elementsFromPoint(x, y);
+            if (!elements || elements.length === 0) return null;
+
+            // 1. data-prism-line이 있는 가장 구체적인(리스트 상단부) 요소를 찾음
+            for (const el of elements) {
+              if (el === prismPickerOverlay) continue;
+              if (el.hasAttribute("data-prism-line")) return el;
+              
+              // 부모로 올라가며 data-prism-line이 있는지 확인 (closest)
+              const parentWithLine = el.closest("[data-prism-line]");
+              if (parentWithLine) return parentWithLine;
+            }
+
+            // 2. 만약 아무것도 소스코드와 매칭되지 않으면, 그냥 가장 위에 있는 유효한 요소 반환
+            for (const el of elements) {
+              if (el === prismPickerOverlay) continue;
+              if (el === document.documentElement || el === document.body) continue;
+              return el;
+            }
+            
+            return elements[0] === prismPickerOverlay ? elements[1] : elements[0];
           }
 
           document.addEventListener("mousemove", function(event) {
             if (!prismPickerActive) return;
-            const target = pickTarget(event.target);
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            const target = findTargetAt(event.clientX, event.clientY);
             if (!target) {
               clearPickerOverlay();
               return;
@@ -398,30 +517,48 @@
             updatePickerOverlay(target);
           }, true);
 
-          document.addEventListener("click", function(event) {
-            if (!prismPickerActive) {
-              // Allow clicking on memo-marked elements to re-edit (only when frozen)
-              if (prismFrozen) {
-                const memoEl = event.target.closest && event.target.closest(".prism-has-instruction");
-                if (memoEl) {
-                  const line = Number(memoEl.getAttribute("data-prism-line")) || 1;
-                  const rect = memoEl.getBoundingClientRect();
-                  parent.postMessage({
-                    type: "PRISM_PICKER_SELECT",
-                    line,
-                    rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
-                  }, "*");
-                }
-              }
-              return;
-            }
-            try {
+          [
+            "pointerdown",
+            "pointerup",
+            "mousedown",
+            "mouseup",
+            "dblclick",
+            "contextmenu",
+            "dragstart",
+            "touchstart",
+            "touchend"
+          ].forEach(function(type) {
+            document.addEventListener(type, function(event) {
+              if (!prismPickerActive) return;
               event.preventDefault();
               event.stopPropagation();
               event.stopImmediatePropagation();
-            } catch (e) {}
-            const target = pickTarget(event.target);
+            }, true);
+          });
+
+          document.addEventListener("click", function(event) {
+            if (!prismPickerActive) {
+              // ... (이미 구현된 메모 마커 클릭 로직) ...
+              const memoEl = event.target.closest && event.target.closest(".prism-has-instruction");
+              if (memoEl) {
+                const line = Number(memoEl.getAttribute("data-prism-line")) || 1;
+                const rect = memoEl.getBoundingClientRect();
+                parent.postMessage({
+                  type: "PRISM_PICKER_SELECT",
+                  line,
+                  rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
+                }, "*");
+              }
+              return;
+            }
+            
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+
+            const target = findTargetAt(event.clientX, event.clientY);
             if (!target) return;
+            
             const line = Number(target.getAttribute("data-prism-line")) || 1;
             const rect = target.getBoundingClientRect();
             parent.postMessage({
@@ -436,16 +573,19 @@
             updatePickerOverlay(prismPickerTarget);
           }, true);
 
+          document.addEventListener("keydown", function(event) {
+            if (!prismFrozen || prismPickerActive) return;
+            if (event.altKey && event.key === "ArrowLeft") return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+          }, true);
+
           window.addEventListener("message", function(event) {
             if (!event.data) return;
             
-            if (event.data.type === "PRISM_PICKER_TOGGLE") {
-              setPickerActive(Boolean(event.data.active));
-            } else if (event.data.type === "PRISM_FREEZE_TOGGLE") {
-              setFrozen(Boolean(event.data.frozen));
-            } else if (event.data.type === "PRISM_UPDATE_INSTRUCTIONS") {
-              prismInstructions = event.data.instructions || {};
-              applyMarkers();
+            if (event.data.type === "PRISM_UI_STATE") {
+              applyUiState(event.data);
             }
           });
 
@@ -466,8 +606,8 @@
           <body>${code}</body></html>`;
       root.appendChild(frame);
       frame.addEventListener("load", () => {
-        if (pickerActive && frame.contentWindow) {
-          frame.contentWindow.postMessage({ type: "PRISM_PICKER_TOGGLE", active: true }, "*");
+        if (frame.contentWindow) {
+          frame.contentWindow.postMessage({ type: "PRISM_UI_STATE", ...uiState }, "*");
         }
       });
     }
@@ -573,30 +713,25 @@
         return;
       }
 
-      if (data.type === "PRISM_PICKER_TOGGLE") {
-        pickerActive = Boolean(data.active);
+      if (data.type === "PRISM_UI_STATE") {
+        uiState = {
+          pickerActive: Boolean(data.pickerActive),
+          frozen: Boolean(data.frozen),
+          instructions: data.instructions || {}
+        };
         if (iframeWindow) {
-          iframeWindow.postMessage({ type: "PRISM_PICKER_TOGGLE", active: pickerActive }, "*");
+          iframeWindow.postMessage({ type: "PRISM_UI_STATE", ...uiState }, "*");
         }
         window.parent.postMessage({
           type: "PRISM_DEVLOG",
-          stage: "picker-toggle-forwarded",
-          payload: { active: pickerActive, hasIframe: Boolean(iframeWindow) }
+          stage: "ui-state-forwarded",
+          payload: {
+            pickerActive: uiState.pickerActive,
+            frozen: uiState.frozen,
+            hasIframe: Boolean(iframeWindow),
+            instructionsCount: Object.keys(uiState.instructions).length
+          }
         }, "*");
-        return;
-      }
-
-      if (data.type === "PRISM_UPDATE_INSTRUCTIONS") {
-        if (iframeWindow) {
-          iframeWindow.postMessage(data, "*");
-        }
-        return;
-      }
-
-      if (data.type === "PRISM_FREEZE_TOGGLE") {
-        if (iframeWindow) {
-          iframeWindow.postMessage(data, "*");
-        }
         return;
       }
 

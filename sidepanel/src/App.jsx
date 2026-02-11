@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer } from 'react';
 import Header from './components/Header.jsx';
 import Viewer from './components/Viewer.jsx';
 import FloatingInput from './components/FloatingInput.jsx';
@@ -165,6 +165,85 @@ function buildRenderKey(code, language, url, theme) {
   return `${kind}::${resolvedTheme}::${source || ""}::${code}`;
 }
 
+const initialInteractionState = {
+  pickerActive: false,
+  canvasFrozen: false,
+  focusLine: null,
+  focusToken: 0,
+  instructions: {},
+  activeInstructionLine: null,
+  activeElementRect: null,
+};
+
+function interactionReducer(state, action) {
+  switch (action.type) {
+    case "SET_PICKER_ACTIVE": {
+      const active = Boolean(action.active);
+      if (state.pickerActive === active) return state;
+      if (!active) {
+        return {
+          ...state,
+          pickerActive: false,
+          activeInstructionLine: null,
+          activeElementRect: null,
+        };
+      }
+      return { ...state, pickerActive: true };
+    }
+    case "TOGGLE_PICKER": {
+      const nextActive = !state.pickerActive;
+      if (!nextActive) {
+        return {
+          ...state,
+          pickerActive: false,
+          activeInstructionLine: null,
+          activeElementRect: null,
+        };
+      }
+      return { ...state, pickerActive: true };
+    }
+    case "TOGGLE_FROZEN":
+      return { ...state, canvasFrozen: !state.canvasFrozen };
+    case "PICKER_SELECT": {
+      const line = Number(action.line) || 1;
+      return {
+        ...state,
+        focusLine: line,
+        focusToken: state.focusToken + 1,
+        activeInstructionLine: line,
+        activeElementRect: action.rect || null,
+      };
+    }
+    case "SAVE_ACTIVE_INSTRUCTION": {
+      const line = state.activeInstructionLine;
+      const text = (action.text || "").trim();
+      if (!line || !text) return state;
+      return {
+        ...state,
+        instructions: { ...state.instructions, [line]: text },
+        activeInstructionLine: null,
+        activeElementRect: null,
+      };
+    }
+    case "REMOVE_ACTIVE_INSTRUCTION": {
+      const line = state.activeInstructionLine;
+      if (!line) return state;
+      const nextInstructions = { ...state.instructions };
+      delete nextInstructions[line];
+      return {
+        ...state,
+        instructions: nextInstructions,
+        activeInstructionLine: null,
+        activeElementRect: null,
+      };
+    }
+    case "CLEAR_SELECTION":
+      return { ...state, activeInstructionLine: null, activeElementRect: null };
+    default:
+      return state;
+  }
+}
+
 function App() {
   const [latestPayload, setLatestPayload] = useState(null);
   const [expertMode, setExpertMode] = useState(false);
@@ -172,18 +251,24 @@ function App() {
     const storedTheme = localStorage.getItem("prism-expert-theme");
     return storedTheme === "light" || storedTheme === "dark" ? storedTheme : "dark";
   });
-  const [pickerActive, setPickerActive] = useState(false);
-  const [focusLine, setFocusLine] = useState(null);
-  const [focusToken, setFocusToken] = useState(0);
-  const [instructions, setInstructions] = useState({});
-  const [activeInstructionLine, setActiveInstructionLine] = useState(null);
-  const [activeElementRect, setActiveElementRect] = useState(null);
-  const [canvasFrozen, setCanvasFrozen] = useState(false);
+  const [interactionState, dispatchInteraction] = useReducer(
+    interactionReducer,
+    initialInteractionState
+  );
+  const {
+    pickerActive,
+    focusLine,
+    focusToken,
+    instructions,
+    activeInstructionLine,
+    activeElementRect,
+    canvasFrozen,
+  } = interactionState;
 
   const viewerRef = useRef(null);
   const viewerReadyRef = useRef(false);
   const pendingPayloadRef = useRef(null);
-  const pendingPickerToggleRef = useRef(false);
+  const pendingUiStateRef = useRef(null);
   const pendingSnapshotActionRef = useRef(null);
   const lastRenderKeyRef = useRef("");
   const hasRenderedOnceRef = useRef(false);
@@ -244,28 +329,26 @@ function App() {
     viewer.contentWindow.postMessage({ type: "RENDER", ...payload }, "*");
   }, []);
 
-  const sendPickerToggle = useCallback(() => {
-    if (!ENABLE_PICKER) return;
+  const buildUiStatePayload = useCallback(() => {
+    return {
+      type: "PRISM_UI_STATE",
+      pickerActive: Boolean(ENABLE_PICKER && pickerActive),
+      frozen: Boolean(canvasFrozen),
+      instructions,
+      instructionsCount: Object.keys(instructions).length,
+    };
+  }, [canvasFrozen, instructions, pickerActive]);
+
+  const sendUiState = useCallback((payloadOverride) => {
     const viewer = viewerRef.current;
-    if (!viewer || !viewer.contentWindow || !viewerReadyRef.current) {
-      pendingPickerToggleRef.current = true;
+    const payload = payloadOverride || buildUiStatePayload();
+    if (!viewer?.contentWindow || !viewerReadyRef.current) {
+      pendingUiStateRef.current = payload;
       return;
     }
-    pendingPickerToggleRef.current = false;
-    viewer.contentWindow.postMessage(
-      { type: "PRISM_PICKER_TOGGLE", active: pickerActive },
-      "*"
-    );
-  }, [pickerActive]);
-
-  const sendFreezeToggle = useCallback((frozen) => {
-    const viewer = viewerRef.current;
-    if (!viewer?.contentWindow || !viewerReadyRef.current) return;
-    viewer.contentWindow.postMessage(
-      { type: "PRISM_FREEZE_TOGGLE", frozen },
-      "*"
-    );
-  }, []);
+    pendingUiStateRef.current = null;
+    viewer.contentWindow.postMessage(payload, "*");
+  }, [buildUiStatePayload]);
 
   const renderPayload = useCallback((code, language, url, theme) => {
     if (!code) {
@@ -495,36 +578,24 @@ function App() {
       postToSandbox(pendingPayloadRef.current);
       pendingPayloadRef.current = null;
     }
-    if (pendingPickerToggleRef.current) {
-      sendPickerToggle();
+    if (pendingUiStateRef.current) {
+      sendUiState(pendingUiStateRef.current);
+    } else {
+      sendUiState();
     }
-  }, [postToSandbox, sendPickerToggle]);
+  }, [postToSandbox, sendUiState]);
 
   useEffect(() => {
     if (!ENABLE_PICKER) return;
     const canPick = latestPayload?.language === "html";
     if (!canPick && pickerActive) {
-      setPickerActive(false);
+      dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
     }
   }, [latestPayload?.language, pickerActive]);
 
   useEffect(() => {
-    if (!ENABLE_PICKER) return;
-    sendPickerToggle();
-  }, [pickerActive, sendPickerToggle]);
-
-  useEffect(() => {
-    sendFreezeToggle(canvasFrozen);
-  }, [canvasFrozen, sendFreezeToggle]);
-
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || !viewer.contentWindow || !viewerReadyRef.current) return;
-    viewer.contentWindow.postMessage({
-      type: "PRISM_UPDATE_INSTRUCTIONS",
-      instructions
-    }, "*");
-  }, [instructions]);
+    sendUiState();
+  }, [sendUiState]);
 
   useEffect(() => {
     const handleMessage = (event) => {
@@ -539,16 +610,11 @@ function App() {
 
       if (data.type === "PRISM_PICKER_SELECT") {
         if (!ENABLE_PICKER) return;
-        // Picker stays on — don't setPickerActive(false)
-        const lineNumber = Number(data.line) || 1;
-        setFocusLine(lineNumber);
-        setFocusToken((token) => token + 1);
-        setActiveInstructionLine(lineNumber);
-        if (data.rect) {
-          setActiveElementRect(data.rect);
-        } else {
-          setActiveElementRect(null);
-        }
+        dispatchInteraction({
+          type: "PICKER_SELECT",
+          line: data.line,
+          rect: data.rect || null,
+        });
         return;
       }
 
@@ -619,31 +685,22 @@ function App() {
   }, [updateViewer]);
 
   const handleSaveInstruction = useCallback((text) => {
-    if (!activeInstructionLine) return;
-    setInstructions(prev => ({
-      ...prev,
-      [activeInstructionLine]: text
-    }));
-    showToast(`Line ${activeInstructionLine} 메모 저장됨`);
-    setActiveInstructionLine(null);
-    setActiveElementRect(null);
+    const lineNumber = activeInstructionLine;
+    const nextText = (text || "").trim();
+    if (!lineNumber || !nextText) return;
+    dispatchInteraction({ type: "SAVE_ACTIVE_INSTRUCTION", text: nextText });
+    showToast(`Line ${lineNumber} 메모 저장됨`);
   }, [activeInstructionLine, showToast]);
 
   const handleClearSelection = useCallback(() => {
-    setActiveInstructionLine(null);
-    setActiveElementRect(null);
+    dispatchInteraction({ type: "CLEAR_SELECTION" });
   }, []);
 
   const handleRemoveInstruction = useCallback(() => {
-    if (!activeInstructionLine) return;
-    setInstructions(prev => {
-      const next = { ...prev };
-      delete next[activeInstructionLine];
-      return next;
-    });
-    showToast(`Line ${activeInstructionLine} 메모 삭제됨`);
-    setActiveInstructionLine(null);
-    setActiveElementRect(null);
+    const lineNumber = activeInstructionLine;
+    if (!lineNumber) return;
+    dispatchInteraction({ type: "REMOVE_ACTIVE_INSTRUCTION" });
+    showToast(`Line ${lineNumber} 메모 삭제됨`);
   }, [activeInstructionLine, showToast]);
 
   const handleExportPrompt = useCallback(() => {
@@ -719,21 +776,11 @@ function App() {
   const handlePickerToggle = useCallback(() => {
     if (!ENABLE_PICKER) return;
     if (latestPayload?.language !== "html") return;
-    setPickerActive((prev) => {
-      const next = !prev;
-      if (next) {
-        setCanvasFrozen(true);
-      } else {
-        setCanvasFrozen(false);
-        setActiveInstructionLine(null);
-        setActiveElementRect(null);
-      }
-      return next;
-    });
+    dispatchInteraction({ type: "TOGGLE_PICKER" });
   }, [latestPayload?.language]);
 
   const handleFreezeToggle = useCallback(() => {
-    setCanvasFrozen((prev) => !prev);
+    dispatchInteraction({ type: "TOGGLE_FROZEN" });
   }, []);
 
   useEffect(() => {
@@ -777,29 +824,18 @@ function App() {
         onPickerToggle={handlePickerToggle}
         isPickerDisabled={isPickerDisabled}
         instructionCount={Object.keys(instructions).length}
+        canvasFrozen={canvasFrozen}
+        onFreezeToggle={handleFreezeToggle}
       />
       <div className="viewer-container">
         <Viewer ref={viewerRef} onReady={handleViewerReady} />
-        {pickerActive && (
-          <button
-            className={`canvas-freeze-btn ${canvasFrozen ? 'is-frozen' : 'is-playing'}`}
-            onClick={handleFreezeToggle}
-            aria-label={canvasFrozen ? 'Play animations' : 'Pause animations'}
-            title={canvasFrozen ? '재생' : '일시정지'}
-          >
-            {canvasFrozen ? (
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-            )}
-          </button>
-        )}
         {activeInstructionLine !== null && (
           <FloatingInput
             line={activeInstructionLine}
             initialValue={instructions[activeInstructionLine] || ''}
             elementRect={activeElementRect}
             viewerRect={viewerRef.current?.getBoundingClientRect?.()}
+            canvasFrozen={canvasFrozen}
             onSave={handleSaveInstruction}
             onRemove={handleRemoveInstruction}
             onClose={handleClearSelection}
