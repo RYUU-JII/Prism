@@ -20,6 +20,7 @@ const Header = ({
 }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("core");
   const shellRef = useRef(null);
   const pickerHighlight = uiSettings?.pickerHighlight || {};
 
@@ -247,11 +248,36 @@ const Header = ({
       </div>
       <div
         className={`panel-shell__settings ${settingsOpen ? "is-open" : ""}`}
+        data-active-tab={settingsTab}
         aria-hidden={!settingsOpen}
       >
+        <div
+          className="panel-shell__settings-title panel-shell__settings-title--tabs"
+          role="tablist"
+          aria-label="Settings section"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={settingsTab === "core"}
+            className={`panel-shell__settings-title-tab ${settingsTab === "core" ? "is-active" : ""}`}
+            onClick={() => setSettingsTab("core")}
+          >
+            Core
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={settingsTab === "global"}
+            className={`panel-shell__settings-title-tab ${settingsTab === "global" ? "is-active" : ""}`}
+            onClick={() => setSettingsTab("global")}
+          >
+            Global
+          </button>
+        </div>
         <div className="panel-shell__settings-grid panel-shell__settings-grid--two-column">
           <div className="panel-shell__settings-block is-core">
-            <div className="panel-shell__settings-title">Core</div>
+            <div className="panel-shell__settings-title panel-shell__settings-title--label">Core</div>
             <div className="panel-shell__setting-row">
               <div className="panel-shell__setting-copy">
                 <div className="panel-shell__setting-title">Auto Pause On Picker</div>
@@ -329,7 +355,7 @@ const Header = ({
             </div>
           </div>
           <div className="panel-shell__settings-block is-global">
-            <div className="panel-shell__settings-title">Global</div>
+            <div className="panel-shell__settings-title panel-shell__settings-title--label">Global</div>
             <div className="panel-shell__setting-row">
               <div className="panel-shell__setting-copy">
                 <div className="panel-shell__setting-title">Lock On Pause</div>
