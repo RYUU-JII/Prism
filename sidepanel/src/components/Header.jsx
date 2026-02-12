@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 const SETTINGS_TABS = [
   { id: "core", label: "Core" },
+  { id: "picker", label: "Picker" },
   { id: "global", label: "Global" },
 ];
 
@@ -11,9 +12,6 @@ const Header = ({
   onCopy,
   onOpenWindow,
   onExportPrompt,
-  pickerActive,
-  onPickerToggle,
-  isPickerDisabled,
   isSnapshotDisabled,
   isFreezeDisabled,
   isExportPromptDisabled,
@@ -25,16 +23,29 @@ const Header = ({
   onUpdateSetting,
   themeMode,
   onThemeModeChange,
+  isViewMode,
+  onToggleViewMode,
+  feedbackMessage,
+  feedbackActive,
 }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("core");
   const shellRef = useRef(null);
+  const settingsToggleRef = useRef(null);
   const pickerHighlight = uiSettings?.pickerHighlight || {};
   const memoResetPolicy = uiSettings?.memoResetPolicy || "on_code_change";
+  const patchFullSyncEvery = Number(uiSettings?.patchFullSyncEvery) || 0;
+  const retryFullSyncOnReject = uiSettings?.retryFullSyncOnReject === true;
+  const adaptiveResponseRouting = uiSettings?.adaptiveResponseRouting !== false;
   const showTooltips = uiSettings?.showTooltips !== false;
+  const responseModeLabel = uiSettings?.aiResponseMode === "full" ? "Full Code" : "Smart Patch";
   const activeThemeMode =
     themeMode === "light" || themeMode === "dark" ? themeMode : "detect";
+  const indicatorMessage =
+    typeof feedbackMessage === "string" && feedbackMessage.trim()
+      ? feedbackMessage.trim()
+      : "대기중";
 
   useEffect(() => {
     if (!settingsOpen && !utilityMenuOpen) return undefined;
@@ -66,8 +77,13 @@ const Header = ({
   }, [settingsOpen, utilityMenuOpen]);
 
   useEffect(() => {
-    if (!settingsOpen) return;
-    setUtilityMenuOpen(false);
+    if (!settingsOpen) {
+      setUtilityMenuOpen(false);
+      // Restore focus to toggle button when closing
+      if (settingsToggleRef.current) {
+        settingsToggleRef.current.focus();
+      }
+    }
   }, [settingsOpen]);
 
   const coreButtonDefs = [
@@ -89,21 +105,36 @@ const Header = ({
       ),
     },
     {
-      id: "picker",
-      title: "Element Picker",
-      tooltip: "Picker",
-      action: onPickerToggle,
-      extraClass: pickerActive ? "panel-shell__action--active" : "",
-      icon: (
+      id: "viewMode",
+      title: isViewMode ? "Edit Mode" : "View Mode",
+      tooltip: isViewMode ? "Switch to Edit Mode" : "Switch to View Mode",
+      action: onToggleViewMode,
+      icon: isViewMode ? (
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M17.5 12a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11Zm0-2a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM7 17l5-5 1.4 1.4L8.4 18.4 11 21H3v-8l2.6 2.6L7 17Z" />
+          <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25ZM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5ZM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5Zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3Z" />
         </svg>
       ),
     },
     {
-      id: "exportPrompt",
+      id: "freeze",
+      title: canvasFrozen ? "Unfreeze" : "Freeze",
+      tooltip: canvasFrozen ? "Unfreeze page" : "Freeze page",
+      action: onFreezeToggle,
+      disabled: Boolean(isFreezeDisabled),
+      icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M15 2H9v2h6V2ZM11 14.5h2V7h-2v7.5Zm4.07-3.57 1.42-1.42A8.962 8.962 0 0 0 12 7V5.07C16.93 5.54 21 9.91 21 15.1c0 5.52-4.48 10-10 10S1 20.62 1 15.1c0-2.32.79-4.46 2.12-6.16l1.42 1.42a6.974 6.974 0 0 1-1.54 4.74h17.14c-.04-1.78-.6-3.41-1.54-4.74Z" />
+        </svg>
+      ),
+    },
+    {
+      id: "copyPrompt",
       title: "Copy Prompt",
-      tooltip: "Copy prompt",
+      tooltip: `Copy ${responseModeLabel} Prompt`,
       action: onExportPrompt,
       disabled: Boolean(isExportPromptDisabled),
       extraClass: "panel-shell__action--export",
@@ -144,6 +175,7 @@ const Header = ({
       title: "Save HTML",
       tooltip: "Save HTML",
       action: onSaveHtml,
+      label: "HTML",
       icon: <span>HTML</span>,
     },
     {
@@ -152,6 +184,7 @@ const Header = ({
       tooltip: "Save screenshot",
       action: onSnapshot,
       disabled: Boolean(isSnapshotDisabled),
+      label: "Screenshot",
       icon: (
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M8.5 7.5h7l1.2 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2.3l1.2-2Zm3.5 3.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z" />
@@ -164,6 +197,7 @@ const Header = ({
       tooltip: "Copy screenshot",
       action: onCopy,
       disabled: Boolean(isSnapshotDisabled),
+      label: "Copy Img",
       icon: (
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M8 7a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2Zm2 0v9a2 2 0 0 0 2 2h5v2H6V9h2Zm2 0h7v9h-7V7Z" />
@@ -179,33 +213,7 @@ const Header = ({
 
   const resolveTooltip = (tooltip) => (showTooltips ? tooltip : undefined);
 
-  const renderSettingsTabs = () => (
-    <div
-      className="panel-shell__settings-inline-tabs"
-      role="tablist"
-      aria-label="Settings section"
-    >
-      {SETTINGS_TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          role="tab"
-          aria-selected={settingsTab === tab.id}
-          className={`panel-shell__settings-title-tab ${settingsTab === tab.id ? "is-active" : ""}`}
-          onClick={() => setSettingsTab(tab.id)}
-        >
-          {tab.label}
-        </button>
-      ))}
-    </div>
-  );
 
-  const renderSettingsBlockTitle = (label) => (
-    <div className="panel-shell__settings-title panel-shell__settings-title--label">
-      <span className="panel-shell__settings-title-name">{label}</span>
-      {renderSettingsTabs()}
-    </div>
-  );
 
   const renderToolbarButton = (def, options = {}) => {
     const { disabled = false, inUtilityMenu = false } = options;
@@ -236,6 +244,7 @@ const Header = ({
         }}
       >
         {def.icon}
+        {inUtilityMenu && <span className="panel-shell__utility-label">{def.label}</span>}
       </button>
     );
   };
@@ -245,33 +254,28 @@ const Header = ({
       ref={shellRef}
       className={`panel-shell__bar ${settingsOpen ? "is-settings-open" : ""}`}
     >
+      <div className="panel-shell__bar-center">
+        <div
+          className={`panel-shell__feedback-indicator ${feedbackActive ? "is-active" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="panel-shell__feedback-dot" aria-hidden="true" />
+          <span className="panel-shell__feedback-text">{indicatorMessage}</span>
+        </div>
+      </div>
       <div className="panel-shell__bar-main panel-shell__bar-main--two-sector">
         <div className="panel-shell__sector panel-shell__sector--core">
           <div className="panel-shell__actions panel-shell__actions--core">
-            {coreButtonDefs.map((item) =>
+            {coreButtonDefs.slice(0, 2).map((item) =>
               renderToolbarButton(item, {
-                disabled: settingsOpen || (item.id === "picker" && isPickerDisabled),
+                disabled: settingsOpen,
               })
             )}
           </div>
         </div>
         <div className="panel-shell__sector panel-shell__sector--utility-settings">
           <div className="panel-shell__meta-controls">
-            <button
-              className={`panel-shell__action panel-shell__action--settings ${settingsOpen ? "panel-shell__action--active" : ""}`}
-              type="button"
-              aria-label="Toggle settings"
-              data-tooltip={resolveTooltip("Settings")}
-              aria-expanded={settingsOpen}
-              onClick={toggleSettings}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M19.14 12.94a7.38 7.38 0 0 0 .05-.94 7.38 7.38 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.65l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.14 7.14 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.43h-3.84a.5.5 0 0 0-.5.43l-.36 2.54c-.57.23-1.11.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.7 8.83a.5.5 0 0 0 .12.65l2.03 1.58c-.03.31-.05.63-.05.94s.02.63.05.94L2.82 14.52a.5.5 0 0 0-.12.65l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.04.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.43h3.84a.5.5 0 0 0 .5-.43l.36-2.54c.57-.23 1.11-.54 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.65l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z" />
-              </svg>
-            </button>
-          </div>
-          <span className="panel-shell__meta-divider" />
-          <div className="panel-shell__utility-controls">
             <div className="panel-shell__utility-overflow is-visible">
               <button
                 className={`panel-shell__action panel-shell__action--overflow ${utilityMenuOpen ? "panel-shell__action--active" : ""}`}
@@ -296,191 +300,320 @@ const Header = ({
                 </div>
               )}
             </div>
+
+            {renderToolbarButton(coreButtonDefs[2], {
+              disabled: settingsOpen || isFreezeDisabled,
+            })}
+
+            <button
+              ref={settingsToggleRef}
+              className={`panel-shell__action panel-shell__action--settings ${settingsOpen ? "panel-shell__action--active" : ""}`}
+              type="button"
+              id="prism-settings-toggle"
+              aria-label="Toggle settings"
+              data-tooltip={resolveTooltip("Settings")}
+              aria-expanded={settingsOpen}
+              onClick={toggleSettings}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19.14 12.94a7.38 7.38 0 0 0 .05-.94 7.38 7.38 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.65l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.14 7.14 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.43h-3.84a.5.5 0 0 0-.5.43l-.36 2.54c-.57.23-1.11.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.7 8.83a.5.5 0 0 0 .12.65l2.03 1.58c-.03.31-.05.63-.05.94s.02.63.05.94L2.82 14.52a.5.5 0 0 0-.12.65l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.04.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.43h3.84a.5.5 0 0 0 .5-.43l.36-2.54c.57-.23 1.11-.54 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.65l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
       <div
         className={`panel-shell__settings ${settingsOpen ? "is-open" : ""}`}
         data-active-tab={settingsTab}
-        aria-hidden={!settingsOpen}
+        aria-hidden={settingsOpen ? undefined : "true"}
       >
-        <div className="panel-shell__settings-grid panel-shell__settings-grid--two-column">
-          <div className="panel-shell__settings-block is-core">
-            {renderSettingsBlockTitle("Core")}
-            <div className="panel-shell__setting-row">
-              <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Auto Pause on Picker</div>
-                <div className="panel-shell__setting-description">피커 시작 시 자동으로 일시정지</div>
-              </div>
+        <div className="panel-shell__settings-overlay-header">
+          <div className="panel-shell__settings-tabs">
+            {SETTINGS_TABS.map((tab) => (
               <button
+                key={tab.id}
                 type="button"
-                className={`panel-shell__switch ${uiSettings?.pickerAutoPause ? "is-on" : ""}`}
-                aria-label="Auto Pause On Picker"
-                aria-pressed={uiSettings?.pickerAutoPause}
-                onClick={() => onToggleSetting?.("pickerAutoPause")}
+                className={`panel-shell__settings-tab-btn ${settingsTab === tab.id ? "is-active" : ""}`}
+                onClick={() => setSettingsTab(tab.id)}
               >
-                <span className="panel-shell__switch-thumb" />
+                {tab.label}
               </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="panel-shell__settings-close"
+            onClick={() => setSettingsOpen(false)}
+            aria-label="Close settings"
+          >
+            <svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
+          </button>
+        </div>
+
+        <div className="panel-shell__settings-content">
+          {settingsTab === "core" && (
+            <div className="panel-shell__settings-section">
+              <div className="panel-shell__setting-row is-stacked">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Export Action</div>
+                  <div className="panel-shell__setting-description">프롬프트 내보내기 시 후속 동작</div>
+                </div>
+                <div className="panel-shell__segmented">
+                  {[
+                    { id: "copy", label: "Copy Only" },
+                    { id: "inject", label: "Inject" },
+                    { id: "send", label: "Auto-send" },
+                  ].map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      className={`panel-shell__segment ${uiSettings?.exportAction === action.id ? "is-active" : ""}`}
+                      onClick={() => onUpdateSetting?.("exportAction", action.id)}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="panel-shell__setting-row is-stacked">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Policy</div>
+                  <div className="panel-shell__setting-description">메모 초기화 정책</div>
+                </div>
+                <div className="panel-shell__segmented">
+                  {[
+                    { id: "on_code_change", label: "On change" },
+                    { id: "on_copy", label: "On copy" },
+                    { id: "manual", label: "Manual" },
+                  ].map((policy) => (
+                    <button
+                      key={policy.id}
+                      type="button"
+                      className={`panel-shell__segment ${memoResetPolicy === policy.id ? "is-active" : ""}`}
+                      onClick={() => onUpdateSetting?.("memoResetPolicy", policy.id)}
+                    >
+                      {policy.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="panel-shell__setting-row is-stacked">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">AI Response Mode</div>
+                  <div className="panel-shell__setting-description">AI 답변 수신 방식 선택</div>
+                </div>
+                <div className="panel-shell__segmented">
+                  {[
+                    { id: "full", label: "Full Code" },
+                    { id: "patch", label: "Smart Patch" },
+                  ].map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      className={`panel-shell__segment ${uiSettings?.aiResponseMode === mode.id ? "is-active" : ""}`}
+                      onClick={() => onUpdateSetting?.("aiResponseMode", mode.id)}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="panel-shell__setting-row">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Adaptive Routing</div>
+                  <div className="panel-shell__setting-description">복합 수정 감지 시 Full Code로 자동 전환</div>
+                </div>
+                <button
+                  type="button"
+                  className={`panel-shell__switch ${adaptiveResponseRouting ? "is-on" : ""}`}
+                  onClick={() => onToggleSetting?.("adaptiveResponseRouting")}
+                >
+                  <span className="panel-shell__switch-thumb" />
+                </button>
+              </div>
+              <div className="panel-shell__setting-row">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Auto-import AI Response</div>
+                  <div className="panel-shell__setting-description">AI 답변 완료 시 코드를 자동으로 가져오기</div>
+                </div>
+                <button
+                  type="button"
+                  className={`panel-shell__switch ${uiSettings?.autoImportResponse ? "is-on" : ""}`}
+                  onClick={() => onToggleSetting?.("autoImportResponse")}
+                >
+                  <span className="panel-shell__switch-thumb" />
+                </button>
+              </div>
+              <div className="panel-shell__setting-row is-stacked">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Patch Full Sync Cadence</div>
+                  <div className="panel-shell__setting-description">N턴마다 full 컨텍스트 강제 동기화</div>
+                </div>
+                <div className="panel-shell__segmented">
+                  {[
+                    { value: 0, label: "Off" },
+                    { value: 2, label: "2T" },
+                    { value: 3, label: "3T" },
+                    { value: 5, label: "5T" },
+                    { value: 8, label: "8T" },
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`panel-shell__segment ${patchFullSyncEvery === option.value ? "is-active" : ""}`}
+                      onClick={() => onUpdateSetting?.("patchFullSyncEvery", option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="panel-shell__setting-row">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Retry Full Sync on Reject</div>
+                  <div className="panel-shell__setting-description">Smart Patch 거부 시 full sync 자동 재시도</div>
+                </div>
+                <button
+                  type="button"
+                  className={`panel-shell__switch ${retryFullSyncOnReject ? "is-on" : ""}`}
+                  onClick={() => onToggleSetting?.("retryFullSyncOnReject")}
+                >
+                  <span className="panel-shell__switch-thumb" />
+                </button>
+              </div>
             </div>
-            <div className="panel-shell__setting-row">
-              <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Keep Picker Active</div>
-                <div className="panel-shell__setting-description">요소 선택 후 피커 모드 유지</div>
+          )}
+
+          {settingsTab === "picker" && (
+            <div className="panel-shell__settings-section">
+              <div className="panel-shell__setting-row">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Auto Pause on Picker</div>
+                  <div className="panel-shell__setting-description">피커 시작 시 자동으로 일시정지</div>
+                </div>
+                <button
+                  type="button"
+                  className={`panel-shell__switch ${uiSettings?.pickerAutoPause ? "is-on" : ""}`}
+                  onClick={() => onToggleSetting?.("pickerAutoPause")}
+                >
+                  <span className="panel-shell__switch-thumb" />
+                </button>
               </div>
-              <button
-                type="button"
-                className={`panel-shell__switch ${uiSettings?.keepPickerActiveAfterSelect ? "is-on" : ""}`}
-                aria-label="Keep picker active"
-                aria-pressed={uiSettings?.keepPickerActiveAfterSelect}
-                onClick={() => onToggleSetting?.("keepPickerActiveAfterSelect")}
-              >
-                <span className="panel-shell__switch-thumb" />
-              </button>
-            </div>
-            <div className="panel-shell__setting-row is-stacked">
-              <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Prompt Detail Level</div>
-                <div className="panel-shell__setting-description">프롬프트에 포함할 코드 범위</div>
+              <div className="panel-shell__setting-row">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Keep Picker Active</div>
+                  <div className="panel-shell__setting-description">요소 선택 후 피커 모드 유지</div>
+                </div>
+                <button
+                  type="button"
+                  className={`panel-shell__switch ${uiSettings?.keepPickerActiveAfterSelect ? "is-on" : ""}`}
+                  onClick={() => onToggleSetting?.("keepPickerActiveAfterSelect")}
+                >
+                  <span className="panel-shell__switch-thumb" />
+                </button>
               </div>
-              <div className="panel-shell__segmented">
-                {[1, 2, 3].map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    className={`panel-shell__segment ${Number(uiSettings?.exportPromptLevel) === level ? "is-active" : ""}`}
-                    onClick={() => onUpdateSetting?.("exportPromptLevel", level)}
-                  >
-                    {level === 1 ? "Lines" : level === 2 ? "Snippets" : "Full"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="panel-shell__setting-row is-stacked">
-              <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Memo Reset Policy</div>
-                <div className="panel-shell__setting-description">메모 자동 초기화 기준</div>
-              </div>
-              <div className="panel-shell__segmented">
-                {[
-                  { id: "on_code_change", label: "On change" },
-                  { id: "on_copy", label: "On copy" },
-                  { id: "manual", label: "Manual" },
-                ].map((policy) => (
-                  <button
-                    key={policy.id}
-                    type="button"
-                    className={`panel-shell__segment ${memoResetPolicy === policy.id ? "is-active" : ""}`}
-                    onClick={() => onUpdateSetting?.("memoResetPolicy", policy.id)}
-                  >
-                    {policy.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="panel-shell__setting-row is-stacked panel-shell__setting-row--picker">
-              <div className="panel-shell__picker-heading">
+              <div className="panel-shell__setting-row is-stacked">
                 <div className="panel-shell__setting-copy">
                   <div className="panel-shell__setting-title">Picker Highlight</div>
                   <div className="panel-shell__setting-description">피커 강조 색상 및 강도</div>
                 </div>
-                <input
-                  className="panel-shell__color-input"
-                  type="color"
-                  value={pickerHighlight?.color || "#14b8a6"}
-                  onChange={(event) => onUpdateSetting?.("pickerHighlightColor", event.target.value)}
-                  aria-label="Picker highlight color"
-                />
-              </div>
-              <div className="panel-shell__segmented">
-                {["subtle", "medium", "strong"].map((strength) => (
-                  <button
-                    key={strength}
-                    type="button"
-                    className={`panel-shell__segment ${pickerHighlight?.strength === strength ? "is-active" : ""}`}
-                    onClick={() => onUpdateSetting?.("pickerHighlightStrength", strength)}
-                  >
-                    {strength}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="panel-shell__settings-block is-global">
-            {renderSettingsBlockTitle("Global")}
-            <div className="panel-shell__setting-row">
-              <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Interaction Lock on Pause</div>
-                <div className="panel-shell__setting-description">일시정지 상태에서 상호작용 잠금</div>
-              </div>
-              <button
-                type="button"
-                className={`panel-shell__switch ${uiSettings?.lockInteractionsWhenPaused ? "is-on" : ""}`}
-                aria-label="Lock interactions on pause"
-                aria-pressed={uiSettings?.lockInteractionsWhenPaused}
-                onClick={() => onToggleSetting?.("lockInteractionsWhenPaused")}
-              >
-                <span className="panel-shell__switch-thumb" />
-              </button>
-            </div>
-            <div className="panel-shell__setting-row">
-              <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Tooltips</div>
-                <div className="panel-shell__setting-description">버튼 호버 시 도움말 표시</div>
-              </div>
-              <button
-                type="button"
-                className={`panel-shell__switch ${showTooltips ? "is-on" : ""}`}
-                aria-label="Toggle tooltips"
-                aria-pressed={showTooltips}
-                onClick={() => onToggleSetting?.("showTooltips")}
-              >
-                <span className="panel-shell__switch-thumb" />
-              </button>
-            </div>
-            <div className="panel-shell__setting-row is-stacked">
-              <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Capture Range</div>
-                <div className="panel-shell__setting-description">보이는 영역 또는 전체 콘텐츠</div>
-              </div>
-              <div className="panel-shell__segmented">
-                {[
-                  { id: "visible", label: "Visible" },
-                  { id: "full", label: "Full" },
-                ].map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className={`panel-shell__segment ${uiSettings?.captureRange === option.id ? "is-active" : ""}`}
-                    onClick={() => onUpdateSetting?.("captureRange", option.id)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+                <div className="panel-shell__picker-config">
+                  <input
+                    className="panel-shell__color-input"
+                    type="color"
+                    value={pickerHighlight?.color || "#14b8a6"}
+                    onChange={(event) => onUpdateSetting?.("pickerHighlightColor", event.target.value)}
+                  />
+                  <div className="panel-shell__segmented">
+                    {["subtle", "medium", "strong"].map((strength) => (
+                      <button
+                        key={strength}
+                        type="button"
+                        className={`panel-shell__segment ${pickerHighlight?.strength === strength ? "is-active" : ""}`}
+                        onClick={() => onUpdateSetting?.("pickerHighlightStrength", strength)}
+                      >
+                        {strength}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="panel-shell__setting-row is-stacked">
-              <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Theme Mode</div>
-                <div className="panel-shell__setting-description">페이지 감지 또는 고정 모드</div>
+          )}
+
+          {settingsTab === "global" && (
+            <div className="panel-shell__settings-section">
+              <div className="panel-shell__setting-row">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Interaction Lock on Pause</div>
+                  <div className="panel-shell__setting-description">일시정지 상태에서 상호작용 잠금</div>
+                </div>
+                <button
+                  type="button"
+                  className={`panel-shell__switch ${uiSettings?.lockInteractionsWhenPaused ? "is-on" : ""}`}
+                  onClick={() => onToggleSetting?.("lockInteractionsWhenPaused")}
+                >
+                  <span className="panel-shell__switch-thumb" />
+                </button>
               </div>
-              <div className="panel-shell__segmented">
-                {[
-                  { id: "detect", label: "Detect" },
-                  { id: "light", label: "Light" },
-                  { id: "dark", label: "Dark" },
-                ].map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    className={`panel-shell__segment ${activeThemeMode === mode.id ? "is-active" : ""}`}
-                    onClick={() => onThemeModeChange?.(mode.id)}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
+              <div className="panel-shell__setting-row is-stacked">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Capture Range</div>
+                  <div className="panel-shell__setting-description">보이는 영역 또는 전체 콘텐츠</div>
+                </div>
+                <div className="panel-shell__segmented">
+                  {[
+                    { id: "visible", label: "Visible" },
+                    { id: "full", label: "Full" },
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={`panel-shell__segment ${uiSettings?.captureRange === option.id ? "is-active" : ""}`}
+                      onClick={() => onUpdateSetting?.("captureRange", option.id)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="panel-shell__setting-row is-stacked">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Theme Mode</div>
+                  <div className="panel-shell__setting-description">페이지 감지 또는 고정 모드</div>
+                </div>
+                <div className="panel-shell__segmented">
+                  {[
+                    { id: "detect", label: "Detect" },
+                    { id: "light", label: "Light" },
+                    { id: "dark", label: "Dark" },
+                  ].map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      className={`panel-shell__segment ${activeThemeMode === mode.id ? "is-active" : ""}`}
+                      onClick={() => onThemeModeChange?.(mode.id)}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="panel-shell__setting-row">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Tooltips</div>
+                  <div className="panel-shell__setting-description">버튼 호버 시 도움말 표시</div>
+                </div>
+                <button
+                  type="button"
+                  className={`panel-shell__switch ${showTooltips ? "is-on" : ""}`}
+                  onClick={() => onToggleSetting?.("showTooltips")}
+                >
+                  <span className="panel-shell__switch-thumb" />
+                </button>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </header>

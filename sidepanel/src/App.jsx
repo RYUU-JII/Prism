@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer } from 'react';
 import Header from './components/Header.jsx';
 import Viewer from './components/Viewer.jsx';
-import FloatingInput from './components/FloatingInput.jsx';
+import CommandBar from './components/CommandBar.jsx';
 import NotesIsland from './components/NotesIsland.jsx';
 import ExpertEditor from './components/ExpertEditor.jsx';
 import { performCaptureInParent } from './utils/capture';
@@ -10,10 +10,12 @@ import { useToast } from './hooks/useToast.jsx';
 const ENABLE_EXPERT_MODE = false;
 const ENABLE_PICKER = true;
 const SNAPSHOT_COOLDOWN_MS = 900;
+const PATCH_FULL_SYNC_CADENCE_OPTIONS = [0, 2, 3, 5, 8];
 const UI_SETTINGS_KEY = "prism-ui-settings-v3";
 const LEGACY_THEME_KEY = "prism-expert-theme";
+const CORE_POLICY_PROFILE_VERSION = 1;
+const AUTO_IMPORT_DEFAULT_VERSION = 1;
 const VALID_THEME_MODES = ["detect", "light", "dark"];
-const VALID_MEMO_RESET_POLICIES = ["on_code_change", "on_copy", "manual"];
 const DEFAULT_RUNTIME_CAPABILITIES = Object.freeze({
   picker: true,
   snapshot: true,
@@ -26,14 +28,21 @@ const DEFAULT_UI_SETTINGS = {
   lockInteractionsWhenPaused: true,
   showTooltips: true,
   captureRange: "visible",
-  memoResetPolicy: "on_code_change",
+  memoResetPolicy: "on_copy",
   keepPickerActiveAfterSelect: true,
-  exportPromptLevel: 2,
   pickerAutoPause: false,
   pickerHighlight: {
     strength: "medium",
     color: "#14b8a6",
   },
+  aiResponseMode: "patch",
+  adaptiveResponseRouting: true,
+  autoImportResponse: false,
+  autoImportResponseVersion: AUTO_IMPORT_DEFAULT_VERSION,
+  patchFullSyncEvery: 0,
+  retryFullSyncOnReject: false,
+  exportAction: "inject",
+  corePolicyProfileVersion: CORE_POLICY_PROFILE_VERSION,
 };
 
 function loadUiSettings() {
@@ -47,13 +56,12 @@ function loadUiSettings() {
       : legacyTheme === "light" || legacyTheme === "dark"
         ? legacyTheme
         : DEFAULT_UI_SETTINGS.themeMode;
-    const exportPromptLevel = [1, 2, 3].includes(Number(parsed?.exportPromptLevel))
-      ? Number(parsed.exportPromptLevel)
-      : DEFAULT_UI_SETTINGS.exportPromptLevel;
+    const storedProfileVersion = Number(parsed?.corePolicyProfileVersion || 0);
+    const shouldApplyCorePolicyProfile = storedProfileVersion < CORE_POLICY_PROFILE_VERSION;
     const captureRange = ["visible", "full"].includes(parsed?.captureRange)
       ? parsed.captureRange
       : DEFAULT_UI_SETTINGS.captureRange;
-    const memoResetPolicy = VALID_MEMO_RESET_POLICIES.includes(parsed?.memoResetPolicy)
+    let memoResetPolicy = ["on_code_change", "on_copy", "manual"].includes(parsed?.memoResetPolicy)
       ? parsed.memoResetPolicy
       : DEFAULT_UI_SETTINGS.memoResetPolicy;
     const legacyStrength = ["subtle", "medium", "strong"].includes(parsed?.highlightStrength)
@@ -76,6 +84,42 @@ function loadUiSettings() {
           ? pickerHighlightRaw.color
           : legacyColor,
     };
+    let exportAction = ["copy", "inject", "send"].includes(parsed?.exportAction)
+      ? parsed.exportAction
+      : DEFAULT_UI_SETTINGS.exportAction;
+    let autoImportResponse =
+      typeof parsed?.autoImportResponse === "boolean"
+        ? parsed.autoImportResponse
+        : DEFAULT_UI_SETTINGS.autoImportResponse;
+    const storedAutoImportVersion = Number(parsed?.autoImportResponseVersion || 0);
+    let patchFullSyncEvery = PATCH_FULL_SYNC_CADENCE_OPTIONS.includes(Number(parsed?.patchFullSyncEvery))
+      ? Number(parsed.patchFullSyncEvery)
+      : DEFAULT_UI_SETTINGS.patchFullSyncEvery;
+    let retryFullSyncOnReject =
+      typeof parsed?.retryFullSyncOnReject === "boolean"
+        ? parsed.retryFullSyncOnReject
+        : DEFAULT_UI_SETTINGS.retryFullSyncOnReject;
+    let aiResponseMode = ["full", "patch"].includes(parsed?.aiResponseMode)
+      ? parsed.aiResponseMode
+      : DEFAULT_UI_SETTINGS.aiResponseMode;
+    let adaptiveResponseRouting =
+      typeof parsed?.adaptiveResponseRouting === "boolean"
+        ? parsed.adaptiveResponseRouting
+        : DEFAULT_UI_SETTINGS.adaptiveResponseRouting;
+
+    if (shouldApplyCorePolicyProfile) {
+      memoResetPolicy = DEFAULT_UI_SETTINGS.memoResetPolicy;
+      exportAction = DEFAULT_UI_SETTINGS.exportAction;
+      autoImportResponse = DEFAULT_UI_SETTINGS.autoImportResponse;
+      patchFullSyncEvery = DEFAULT_UI_SETTINGS.patchFullSyncEvery;
+      retryFullSyncOnReject = DEFAULT_UI_SETTINGS.retryFullSyncOnReject;
+      adaptiveResponseRouting = DEFAULT_UI_SETTINGS.adaptiveResponseRouting;
+      aiResponseMode = DEFAULT_UI_SETTINGS.aiResponseMode;
+    }
+    if (storedAutoImportVersion < AUTO_IMPORT_DEFAULT_VERSION) {
+      autoImportResponse = DEFAULT_UI_SETTINGS.autoImportResponse;
+    }
+
     return {
       themeMode,
       lockInteractionsWhenPaused:
@@ -94,12 +138,19 @@ function loadUiSettings() {
         typeof parsed?.keepPickerActiveAfterSelect === "boolean"
           ? parsed.keepPickerActiveAfterSelect
           : DEFAULT_UI_SETTINGS.keepPickerActiveAfterSelect,
-      exportPromptLevel,
       pickerAutoPause:
         typeof parsed?.pickerAutoPause === "boolean"
           ? parsed.pickerAutoPause
           : DEFAULT_UI_SETTINGS.pickerAutoPause,
       pickerHighlight,
+      exportAction,
+      autoImportResponse,
+      autoImportResponseVersion: AUTO_IMPORT_DEFAULT_VERSION,
+      patchFullSyncEvery,
+      retryFullSyncOnReject,
+      adaptiveResponseRouting,
+      aiResponseMode,
+      corePolicyProfileVersion: CORE_POLICY_PROFILE_VERSION,
     };
   } catch (err) {
     return DEFAULT_UI_SETTINGS;
@@ -118,6 +169,197 @@ function normalizeSource(url) {
   } catch (err) {
     return url;
   }
+}
+
+function buildCodeFingerprint(code) {
+  const source = String(code || "").replace(/\r\n?/g, "\n");
+  let hash = 2166136261;
+  for (let i = 0; i < source.length; i += 1) {
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const lineCount = source ? source.split("\n").length : 0;
+  const hashHex = (hash >>> 0).toString(16).padStart(8, "0");
+  return `${lineCount}L-${hashHex}`;
+}
+
+function evaluateEditComplexity(payload, instructionEntries) {
+  const entries = Array.isArray(instructionEntries) ? instructionEntries : [];
+  const lines = Array.from(
+    new Set(
+      entries
+        .map((entry) => Number(entry?.line))
+        .filter((line) => Number.isFinite(line) && line > 0)
+    )
+  ).sort((a, b) => a - b);
+
+  if (lines.length === 0) {
+    return { score: 0, shouldEscalateToFull: false, reasons: [] };
+  }
+
+  let score = 0;
+  const reasons = [];
+  const lineCount = lines.length;
+
+  if (lineCount >= 3) {
+    score += 3;
+    reasons.push("multi-target");
+  } else if (lineCount === 2) {
+    score += 1;
+    reasons.push("two-target");
+  }
+
+  const span = lines[lines.length - 1] - lines[0] + 1;
+  if (span >= 24) {
+    score += 2;
+    reasons.push("wide-span");
+  }
+
+  let clusters = 1;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i] - lines[i - 1] > 8) clusters += 1;
+  }
+  if (clusters >= 2) {
+    score += 2;
+    reasons.push("multi-cluster");
+  }
+
+  const memoSize = entries.reduce((acc, entry) => acc + String(entry?.memoText || "").trim().length, 0);
+  if (memoSize >= 140) {
+    score += 1;
+    reasons.push("large-intent");
+  }
+
+  const language = String(payload?.language || "").toLowerCase();
+  if (language === "html") {
+    const codeLines = String(payload?.code || "").split("\n");
+    const structuralRe = /<\s*\/?\s*(html|head|body|style|script|header|nav|main|footer|section|article|aside|form|table|ul|ol|li)\b/i;
+    let structuralHits = 0;
+
+    lines.forEach((line) => {
+      const start = Math.max(1, line - 2);
+      const end = Math.min(codeLines.length, line + 2);
+      for (let i = start; i <= end; i += 1) {
+        if (structuralRe.test(codeLines[i - 1] || "")) {
+          structuralHits += 1;
+          break;
+        }
+      }
+    });
+
+    if (structuralHits >= 1) {
+      score += 2;
+      reasons.push("structural-zone");
+    }
+  }
+
+  return {
+    score,
+    shouldEscalateToFull: score >= 4,
+    reasons,
+  };
+}
+
+function buildExportPrompt({
+  payload,
+  instructionEntries,
+  settings,
+  forceFullSync = false,
+}) {
+  const safePayload = payload && typeof payload === "object" ? payload : null;
+  const safeEntries = Array.isArray(instructionEntries) ? instructionEntries : [];
+  const safeSettings = settings && typeof settings === "object" ? settings : DEFAULT_UI_SETTINGS;
+  const routingEnabled = safeSettings.adaptiveResponseRouting !== false;
+
+  if (!safePayload?.code) {
+    return {
+      prompt: "",
+      baseFingerprint: "",
+      promptLevel: 3,
+      forcedFullSync: false,
+      resolvedResponseMode: safeSettings.aiResponseMode || "patch",
+      autoEscalatedToFull: false,
+      escalationReasons: [],
+    };
+  }
+
+  let resolvedResponseMode =
+    safeSettings.aiResponseMode === "full" || safeSettings.aiResponseMode === "patch"
+      ? safeSettings.aiResponseMode
+      : "patch";
+  let autoEscalatedToFull = false;
+  let escalationReasons = [];
+  const forcedFullSync =
+    Boolean(forceFullSync) &&
+    resolvedResponseMode === "patch";
+  if (forcedFullSync) {
+    resolvedResponseMode = "full";
+    escalationReasons = ["forced-full-sync"];
+  }
+  if (resolvedResponseMode === "patch" && routingEnabled) {
+    const complexity = evaluateEditComplexity(safePayload, safeEntries);
+    if (complexity.shouldEscalateToFull) {
+      resolvedResponseMode = "full";
+      autoEscalatedToFull = true;
+      escalationReasons = complexity.reasons;
+    }
+  }
+
+  const codeLines = String(safePayload.code || "").split("\n");
+  const promptLevel = 3;
+  const isPatchMode = resolvedResponseMode === "patch";
+
+  let codeLabel = safePayload.language || "text";
+  let codeBody = safePayload.code;
+  if (isPatchMode) {
+    // Patch mode always uses full numbered source for deterministic line mapping.
+    codeLabel = `${codeLabel} (full-numbered)`;
+    codeBody = codeLines.map((line, index) => `${index + 1}|${line}`).join("\n");
+  } else {
+    codeLabel = `${codeLabel} (full)`;
+  }
+
+  const baseFingerprint = buildCodeFingerprint(safePayload.code);
+  let prompt = "";
+  prompt += `[SRC] ${safePayload.url || "Unknown"}\n`;
+  prompt += `[BASE] ${baseFingerprint}\n`;
+  prompt += "[RULE] Treat [CURRENT_SOURCE_OF_TRUTH] as the single source of truth for this turn. Ignore prior chat code context.\n";
+  prompt += `[CURRENT_SOURCE_OF_TRUTH ${codeLabel}]\n${codeBody}\n[/CURRENT_SOURCE_OF_TRUTH]\n`;
+  prompt += "[REQUEST]\n";
+  safeEntries.forEach((entry) => {
+    prompt += `L${entry.line}:${entry.memoText}\n`;
+  });
+  prompt += "[/REQUEST]\n";
+  if (isPatchMode) {
+    prompt += "[CONSTRAINT]\n";
+    prompt += "xml only; no markdown/text.\n";
+    prompt += "no analysis / no planning text.\n";
+    prompt += "output must start with <prism-patches.\n";
+    prompt += "line numbers must target [CURRENT_SOURCE_OF_TRUTH] above only.\n";
+    prompt += "line prefixes like '73|' are reference markers only; never include those prefixes in REPLACEMENT.\n";
+    prompt += `<prism-patches v="1" b="${baseFingerprint}">\n`;
+    prompt += '<prism-patch s="START" e="END">\n';
+    prompt += "REPLACEMENT\n";
+    prompt += "</prism-patch>\n";
+    prompt += "</prism-patches>\n";
+    prompt += "s/e = original line numbers (1-index, inclusive), multi patches allowed, sorted asc, non-overlap.\n";
+    prompt += 'no full code. no change => <prism-patches v="1"/>.\n';
+  } else {
+    prompt += "[CONSTRAINT]\n";
+    prompt += "return full updated code only.\n";
+    prompt += "no markdown fences, no analysis, no extra prose.\n";
+    prompt += "if no change is needed, return the original full code only.\n";
+  }
+
+  return {
+    prompt,
+    baseFingerprint,
+    promptLevel,
+    forcedFullSync,
+    resolvedResponseMode,
+    autoEscalatedToFull,
+    escalationReasons,
+  };
 }
 
 function detectKind(code) {
@@ -171,26 +413,6 @@ function detectKind(code) {
 
   if (/<[a-z][\s\S]*>/i.test(source)) return "html";
   return "text";
-}
-
-function resolveHintedKind(language) {
-  const value = typeof language === "string" ? language.toLowerCase() : "";
-  if (value === "html") return "html";
-  if (value === "react") return "react";
-  if (value === "vue") return "vue";
-  if (value === "angular") return "angular";
-  if (value === "svelte") return "svelte";
-  return "text";
-}
-
-function resolveRenderKind(language, code) {
-  const hinted = resolveHintedKind(language);
-  const inferred = detectKind(code);
-
-  if (inferred === "angular" || inferred === "svelte") return inferred;
-  if (hinted === "text" && inferred !== "text") return inferred;
-  if ((hinted === "react" || hinted === "vue") && inferred === "html") return "html";
-  return hinted;
 }
 
 function countNewlines(text) {
@@ -307,7 +529,7 @@ function fixRelativePaths(html, baseUrl) {
 
 function buildRenderKey(code, language, url, theme) {
   if (!code) return "";
-  const kind = resolveRenderKind(language, code);
+  const kind = language && language !== "text" ? language : detectKind(code);
   const source = normalizeSource(url);
   const resolvedTheme = theme || "light";
   return `${kind}::${resolvedTheme}::${source || ""}::${code}`;
@@ -315,13 +537,13 @@ function buildRenderKey(code, language, url, theme) {
 
 function buildContentIdentity(code, language, url) {
   if (!code) return "";
-  const kind = resolveRenderKind(language, code);
+  const kind = language && language !== "text" ? language : detectKind(code);
   const source = normalizeSource(url);
   return `${kind}::${source || ""}::${code}`;
 }
 
 const initialInteractionState = {
-  pickerActive: false,
+  pickerActive: true,
   canvasFrozen: false,
   focusLine: null,
   focusToken: 0,
@@ -425,7 +647,7 @@ function interactionReducer(state, action) {
         action.instructions && typeof action.instructions === "object"
           ? action.instructions
           : {};
-      const activeLine = state.activeInstructionLine;
+      const activeLine = Number(state.activeInstructionLine);
       const keepActive =
         Number.isFinite(activeLine) &&
         activeLine > 0 &&
@@ -447,6 +669,7 @@ function interactionReducer(state, action) {
 function App() {
   const [latestPayload, setLatestPayload] = useState(null);
   const [expertMode, setExpertMode] = useState(false);
+  const [isViewMode, setIsViewMode] = useState(false);
   const [uiSettings, setUiSettings] = useState(() => loadUiSettings());
   const [interactionState, dispatchInteraction] = useReducer(
     interactionReducer,
@@ -454,13 +677,13 @@ function App() {
   );
   const [runtimeCapabilities, setRuntimeCapabilities] = useState(() => DEFAULT_RUNTIME_CAPABILITIES);
   const [previewInstructionLine, setPreviewInstructionLine] = useState(null);
+  const [notesPulseToken, setNotesPulseToken] = useState(0);
   const {
     pickerActive,
     focusLine,
     focusToken,
     instructions,
     activeInstructionLine,
-    activeElementRect,
     canvasFrozen,
   } = interactionState;
 
@@ -478,6 +701,11 @@ function App() {
   const flashRef = useRef(null);
   const instructionsRef = useRef(instructions);
   const contentIdentityRef = useRef("");
+  const patchExportTurnRef = useRef(0);
+  const pendingFullSyncRef = useRef(false);
+  const lastExportSnapshotRef = useRef(null);
+  const lastAutoRetryKeyRef = useRef("");
+  const lastPatchRejectRef = useRef({ key: "", at: 0 });
   const { toast, showToast } = useToast();
   const activeTheme = useMemo(
     () => resolveThemeModeTheme(uiSettings.themeMode, latestPayload?.theme),
@@ -497,21 +725,40 @@ function App() {
       .sort((a, b) => a.line - b.line);
   }, [instructions, latestPayload?.code]);
   const instructionCount = instructionEntries.length;
+  const selectedLine = Number(activeInstructionLine) || null;
+  const selectedMemoText = selectedLine ? instructions[String(selectedLine)] || "" : "";
   const isHtmlPayload = latestPayload?.language === "html";
-  const hasRenderableHtml = Boolean(latestPayload?.code) && isHtmlPayload;
   const isPickerDisabled =
     !ENABLE_PICKER ||
-    !hasRenderableHtml;
+    !isHtmlPayload ||
+    runtimeCapabilities?.picker === false;
   const isSnapshotDisabled =
     !latestPayload?.code ||
     (isHtmlPayload && runtimeCapabilities?.snapshot === false);
   const isFreezeDisabled =
     !latestPayload?.code ||
-    !isHtmlPayload;
+    !isHtmlPayload ||
+    (isHtmlPayload && runtimeCapabilities?.freeze === false);
   const isExportPromptDisabled =
     !latestPayload?.code ||
     !isHtmlPayload ||
-    isPickerDisabled;
+    instructionCount === 0;
+  const pickerEnabledForRuntime = Boolean(
+    ENABLE_PICKER &&
+      !isViewMode &&
+      !isPickerDisabled &&
+      pickerActive
+  );
+  const feedbackIdleMessage = useMemo(() => {
+    if (isViewMode) return "뷰 모드";
+    if (canvasFrozen) return "일시정지";
+    if (!isHtmlPayload) return "HTML 대기중";
+    if (pickerEnabledForRuntime) return "피커 활성";
+    if (instructionCount > 0) return `메모 ${instructionCount}개`;
+    return "대기중";
+  }, [canvasFrozen, instructionCount, isHtmlPayload, isViewMode, pickerEnabledForRuntime]);
+  const feedbackMessage =
+    toast?.isVisible && toast.message ? toast.message : feedbackIdleMessage;
 
   const { targetTabId, isWindowMode } = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -575,26 +822,20 @@ function App() {
   const buildUiStatePayload = useCallback(() => {
     return {
       type: "PRISM_UI_STATE",
-      pickerActive: Boolean(ENABLE_PICKER && pickerActive),
+      pickerActive: pickerEnabledForRuntime,
       frozen: Boolean(canvasFrozen),
       instructions,
       instructionsCount: instructionCount,
-      previewLine: previewInstructionLine,
+      previewLine: isViewMode ? null : previewInstructionLine,
       editingLine:
-        Number.isFinite(activeInstructionLine) && activeInstructionLine > 0
-          ? activeInstructionLine
+        !isViewMode && Number.isFinite(selectedLine) && selectedLine > 0
+          ? selectedLine
           : null,
       settings: uiSettings,
+      autoImportResponse: Boolean(uiSettings.autoImportResponse),
+      isViewMode: Boolean(isViewMode),
     };
-  }, [
-    activeInstructionLine,
-    canvasFrozen,
-    instructionCount,
-    instructions,
-    pickerActive,
-    previewInstructionLine,
-    uiSettings,
-  ]);
+  }, [canvasFrozen, instructionCount, instructions, isViewMode, pickerEnabledForRuntime, previewInstructionLine, selectedLine, uiSettings]);
 
   const sendUiState = useCallback((payloadOverride) => {
     const viewer = viewerRef.current;
@@ -616,7 +857,7 @@ function App() {
       postToSandbox({ code: "", language: "text", url: "", theme: renderTheme || "light" });
       return;
     }
-    const kind = resolveRenderKind(language, code);
+    const kind = language && language !== "text" ? language : detectKind(code);
     const source = normalizeSource(url);
     const fixedCode = fixRelativePaths(code, source);
     const sandboxCode = kind === "html" ? addPrismLineAttributes(fixedCode) : fixedCode;
@@ -633,9 +874,8 @@ function App() {
 
   const applyInstructionPolicyForContentChange = useCallback((nextCode) => {
     const currentInstructions = instructionsRef.current || {};
-    const currentKeys = Object.keys(currentInstructions);
-    if (currentKeys.length === 0) return;
-
+    const instructionKeys = Object.keys(currentInstructions);
+    if (instructionKeys.length === 0) return;
     if (uiSettings.memoResetPolicy === "on_code_change") {
       dispatchInteraction({ type: "CLEAR_INSTRUCTIONS" });
       setPreviewInstructionLine(null);
@@ -645,19 +885,19 @@ function App() {
 
     const maxLine = Math.max(1, String(nextCode || "").split("\n").length);
     const nextInstructions = {};
-    currentKeys.forEach((key) => {
+    instructionKeys.forEach((key) => {
       const line = Number(key);
       if (!Number.isFinite(line) || line <= 0 || line > maxLine) return;
       nextInstructions[String(line)] = currentInstructions[key];
     });
-    const removedCount = currentKeys.length - Object.keys(nextInstructions).length;
+    const removedCount = instructionKeys.length - Object.keys(nextInstructions).length;
     if (removedCount <= 0) return;
 
     dispatchInteraction({ type: "SET_INSTRUCTIONS", instructions: nextInstructions });
     setPreviewInstructionLine((prev) =>
       prev && Object.prototype.hasOwnProperty.call(nextInstructions, String(prev)) ? prev : null
     );
-    showToast(`코드 변경으로 ${removedCount}개 메모가 제거되었습니다.`);
+    showToast(`코드 변경으로 ${removedCount}개 메모가 정리되었습니다.`);
   }, [showToast, uiSettings.memoResetPolicy]);
 
   const updateViewer = useCallback((code, language, url, sourceTheme) => {
@@ -669,7 +909,7 @@ function App() {
       renderPayload("", "text", "", sourceTheme, resolvedTheme);
       return;
     }
-    const kind = resolveRenderKind(language, code);
+    const kind = language && language !== "text" ? language : detectKind(code);
     const source = normalizeSource(url);
     const contentIdentity = buildContentIdentity(code, kind, source);
     if (contentIdentityRef.current && contentIdentityRef.current !== contentIdentity) {
@@ -890,6 +1130,14 @@ function App() {
   }, [isPickerDisabled, pickerActive]);
 
   useEffect(() => {
+    if (isViewMode) return;
+    if (isPickerDisabled) return;
+    if (!isHtmlPayload) return;
+    if (pickerActive) return;
+    dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: true });
+  }, [isHtmlPayload, isPickerDisabled, isViewMode, pickerActive]);
+
+  useEffect(() => {
     if (isFreezeDisabled && canvasFrozen) {
       dispatchInteraction({ type: "TOGGLE_FROZEN" });
     }
@@ -904,6 +1152,26 @@ function App() {
     if (!payload?.code) return;
     updateViewer(payload.code, payload.language, payload.url, payload.theme);
   }, [uiSettings.themeMode, updateViewer]);
+
+  useEffect(() => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: "PRISM_SET_VIEW_MODE", enabled: isViewMode });
+      }
+    });
+  }, [isViewMode]);
+
+  useEffect(() => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: "PRISM_UI_STATE",
+          autoImportResponse: Boolean(uiSettings.autoImportResponse),
+          aiResponseMode: uiSettings.aiResponseMode,
+        });
+      }
+    });
+  }, [uiSettings.aiResponseMode, uiSettings.autoImportResponse]);
 
   useEffect(() => {
     const handleMessage = (event) => {
@@ -964,7 +1232,7 @@ function App() {
       }
 
       if (data.type === "PRISM_INSTRUCTION_NAVIGATE_MISS") {
-        showToast(data.reason || "지정한 메모 대상 요소를 찾지 못했습니다.");
+        showToast(data.reason || "메모 대상 요소를 찾지 못했습니다.");
         return;
       }
 
@@ -1033,59 +1301,52 @@ function App() {
     updateViewer(newCode, detectKind(newCode), payload.url, payload.theme);
   }, [updateViewer]);
 
-  const handleSaveInstruction = useCallback((text) => {
-    const lineNumber = activeInstructionLine;
-    const nextText = (text || "").trim();
-    if (!lineNumber || !nextText) return;
-    dispatchInteraction({ type: "SAVE_ACTIVE_INSTRUCTION", text: nextText });
-    showToast(`Line ${lineNumber} 메모 저장됨`);
-  }, [activeInstructionLine, showToast]);
-
   const handleClearSelection = useCallback(() => {
     dispatchInteraction({ type: "CLEAR_SELECTION" });
   }, []);
 
-  const handleRemoveInstruction = useCallback(() => {
-    const lineNumber = activeInstructionLine;
+  const handleAddMemoFromCommandBar = useCallback((text) => {
+    const lineNumber = Number(activeInstructionLine) || null;
+    const nextText = (text || "").trim();
+    if (!lineNumber || !nextText) return false;
+    dispatchInteraction({ type: "PICKER_SELECT", line: lineNumber, keepPickerActiveAfterSelect: true });
+    dispatchInteraction({ type: "SAVE_ACTIVE_INSTRUCTION", text: nextText });
+    setNotesPulseToken((prev) => prev + 1);
+    showToast(`Line ${lineNumber} 메모 저장됨`);
+    return true;
+  }, [activeInstructionLine, showToast]);
+
+  const handleRemoveMemoFromCommandBar = useCallback(() => {
+    const lineNumber = Number(activeInstructionLine) || null;
     if (!lineNumber) return;
+    dispatchInteraction({ type: "PICKER_SELECT", line: lineNumber, keepPickerActiveAfterSelect: true });
     dispatchInteraction({ type: "REMOVE_ACTIVE_INSTRUCTION" });
     showToast(`Line ${lineNumber} 메모 삭제됨`);
   }, [activeInstructionLine, showToast]);
 
   const handleInstructionHover = useCallback((line) => {
-    const nextLine = Number(line);
-    if (!Number.isFinite(nextLine) || nextLine <= 0) {
-      setPreviewInstructionLine(null);
-      return;
-    }
-    if (!Object.prototype.hasOwnProperty.call(instructionsRef.current || {}, String(nextLine))) {
-      setPreviewInstructionLine(null);
-      return;
-    }
-    setPreviewInstructionLine(nextLine);
+    setPreviewInstructionLine(line);
   }, []);
 
   const handleInstructionSelect = useCallback((line) => {
-    const lineNumber = Number(line);
-    if (!Number.isFinite(lineNumber) || lineNumber <= 0) return;
+    const numericLine = Number(line);
+    if (!Number.isFinite(numericLine) || numericLine <= 0) return;
+    dispatchInteraction({ type: "PICKER_SELECT", line: numericLine, keepPickerActiveAfterSelect: true });
     const viewer = viewerRef.current;
-    setPreviewInstructionLine(null);
-    if (!viewer || !viewer.contentWindow || !viewerReadyRef.current) {
-      showToast("Viewer is not ready yet.");
-      return;
+    if (viewer?.contentWindow) {
+      viewer.contentWindow.postMessage(
+        { type: "PRISM_INSTRUCTION_NAVIGATE", line: numericLine, behavior: "smooth" },
+        "*"
+      );
     }
-    viewer.contentWindow.postMessage(
-      { type: "PRISM_INSTRUCTION_NAVIGATE", line: lineNumber, behavior: "smooth" },
-      "*"
-    );
-  }, [showToast]);
+  }, []);
 
   const handleInstructionDelete = useCallback((line) => {
-    const lineNumber = Number(line);
-    if (!Number.isFinite(lineNumber) || lineNumber <= 0) return;
-    dispatchInteraction({ type: "REMOVE_INSTRUCTION_BY_LINE", line: lineNumber });
-    setPreviewInstructionLine((prev) => (prev === lineNumber ? null : prev));
-    showToast(`Line ${lineNumber} 메모 삭제됨`);
+    const numericLine = Number(line);
+    if (!Number.isFinite(numericLine) || numericLine <= 0) return;
+    dispatchInteraction({ type: "PICKER_SELECT", line: numericLine, keepPickerActiveAfterSelect: true });
+    dispatchInteraction({ type: "REMOVE_ACTIVE_INSTRUCTION" });
+    showToast(`Line ${numericLine} 메모 삭제됨`);
   }, [showToast]);
 
   const handleClearAllInstructions = useCallback(() => {
@@ -1095,53 +1356,201 @@ function App() {
     showToast("모든 메모가 삭제되었습니다.");
   }, [instructionCount, showToast]);
 
-  const handleExportPrompt = useCallback(() => {
-    const payload = latestPayloadRef.current;
-    if (!payload?.code) return;
-    if (instructionEntries.length === 0) {
-      showToast("먼저 요소에 메모를 남겨주세요.");
-      return;
-    }
-
-    const detailLevel = [1, 2, 3].includes(Number(uiSettings.exportPromptLevel))
-      ? Number(uiSettings.exportPromptLevel)
-      : 2;
-    const lines = payload.code.split('\n');
-    let prompt = "Please modify the following HTML based on the provided instructions.\n\n";
-
-    prompt += "### INSTRUCTIONS\n";
-    instructionEntries.forEach(({ line, memoText }) => {
-      prompt += `- Line ${line}: ${memoText}\n`;
+  const sendPromptToActiveTab = useCallback((prompt, action) => {
+    if (!prompt) return;
+    if (action !== "inject" && action !== "send") return;
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          type: "PRISM_INJECT_PROMPT",
+          text: prompt,
+          action,
+        });
+      }
     });
+  }, []);
 
-    if (detailLevel >= 2) {
-      prompt += "\n### TARGET SNIPPETS\n";
-      instructionEntries.forEach(({ line }) => {
-        const lineNum = String(line);
-        const idx = Number(lineNum) - 1;
-        const start = Math.max(0, idx - 2);
-        const end = Math.min(lines.length, idx + 3);
-        prompt += `--- Snippet around Line ${lineNum} ---\n`;
-        prompt += lines.slice(start, end).join('\n');
-        prompt += "\n\n";
-      });
+  const handleExportPrompt = useCallback((options = {}) => {
+    const payload = options.payload || latestPayloadRef.current;
+    const entries = Array.isArray(options.instructionEntries)
+      ? options.instructionEntries.map((entry) => ({ ...entry }))
+      : instructionEntries.map((entry) => ({ ...entry }));
+    const settingsSnapshot =
+      options.settings && typeof options.settings === "object"
+        ? { ...options.settings }
+        : { ...uiSettings };
+    const silentWhenNoMemo = Boolean(options.silentWhenNoMemo);
+    const skipClipboard = Boolean(options.skipClipboard);
+    const keepMemos = Boolean(options.keepMemos);
+    const manualForceFullSync = Boolean(options.forceFullSync);
+    const actionOverride = ["copy", "inject", "send"].includes(options.actionOverride)
+      ? options.actionOverride
+      : null;
+    const action = actionOverride || settingsSnapshot.exportAction || "copy";
+
+    if (!payload?.code) return false;
+    if (entries.length === 0) {
+      if (!silentWhenNoMemo) showToast("먼저 요소에 메모를 남겨주세요.");
+      return false;
     }
 
-    if (detailLevel >= 3) {
-      prompt += "### FULL CODE\n";
-      prompt += payload.code;
-    }
+    const cadence = PATCH_FULL_SYNC_CADENCE_OPTIONS.includes(Number(settingsSnapshot.patchFullSyncEvery))
+      ? Number(settingsSnapshot.patchFullSyncEvery)
+      : 0;
+    const dueByCadence =
+      settingsSnapshot.aiResponseMode === "patch" &&
+      cadence > 0 &&
+      ((patchExportTurnRef.current + 1) % cadence === 0);
+    const forceFullSync = manualForceFullSync || pendingFullSyncRef.current || dueByCadence;
+    const promptBundle = buildExportPrompt({
+      payload,
+      instructionEntries: entries,
+      settings: settingsSnapshot,
+      forceFullSync,
+    });
+    if (!promptBundle.prompt) return false;
 
-    navigator.clipboard.writeText(prompt).then(() => {
-      if (uiSettings.memoResetPolicy === "on_copy") {
+    const applyPostExportState = () => {
+      if (!keepMemos && settingsSnapshot.memoResetPolicy === "on_copy") {
         dispatchInteraction({ type: "CLEAR_INSTRUCTIONS" });
         setPreviewInstructionLine(null);
-        showToast("Prompt copied. 메모가 초기화되었습니다.");
+      }
+
+      sendPromptToActiveTab(promptBundle.prompt, action);
+
+      if (settingsSnapshot.aiResponseMode === "patch") {
+        patchExportTurnRef.current =
+          promptBundle.resolvedResponseMode === "patch"
+            ? promptBundle.forcedFullSync
+              ? 0
+              : patchExportTurnRef.current + 1
+            : 0;
+      } else {
+        patchExportTurnRef.current = 0;
+      }
+      pendingFullSyncRef.current = false;
+      lastAutoRetryKeyRef.current = "";
+      lastPatchRejectRef.current = { key: "", at: 0 };
+
+      lastExportSnapshotRef.current = {
+        createdAt: Date.now(),
+        payload: { ...payload },
+        instructionEntries: entries.map((entry) => ({ ...entry })),
+        settings: { ...settingsSnapshot, aiResponseMode: promptBundle.resolvedResponseMode },
+        baseFingerprint: promptBundle.baseFingerprint,
+        retryUsed: Boolean(options.isRetry),
+      };
+    };
+
+    let defaultToast = skipClipboard
+      ? promptBundle.forcedFullSync
+        ? "Full sync prompt 전송됨"
+        : "Prompt 전송됨"
+      : promptBundle.forcedFullSync
+        ? "Full sync prompt copied to clipboard!"
+        : "Prompt copied to clipboard!";
+    if (promptBundle.autoEscalatedToFull) {
+      defaultToast = skipClipboard
+        ? "복합 수정 감지: Full Code 요청으로 자동 전환 후 전송"
+        : "복합 수정 감지: Full Code 요청으로 자동 전환";
+    }
+    const toastMessage =
+      typeof options.toastMessage === "string" && options.toastMessage.trim()
+        ? options.toastMessage.trim()
+        : defaultToast;
+
+    if (skipClipboard) {
+      applyPostExportState();
+      if (toastMessage) showToast(toastMessage);
+      return true;
+    }
+
+    navigator.clipboard.writeText(promptBundle.prompt).then(() => {
+      applyPostExportState();
+      if (toastMessage) showToast(toastMessage);
+    }).catch(() => {
+      showToast("클립보드 복사 실패");
+    });
+    return true;
+  }, [instructionEntries, sendPromptToActiveTab, showToast, uiSettings]);
+
+  useEffect(() => {
+    if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return undefined;
+
+    const describeReason = (reason) => {
+      if (reason === "base_mismatch") return "기준 코드 불일치";
+      if (reason === "invalid_patch") return "패치 포맷 오류";
+      if (reason === "missing_base") return "기준 코드 없음";
+      if (reason === "apply_failed") return "라인 적용 실패";
+      if (reason === "risky_patch") return "구조 위험 패치";
+      if (reason === "unsupported_result") return "결과 타입 불일치";
+      return "알 수 없음";
+    };
+
+    const handlePatchReject = (message) => {
+      if (message?.type !== "PRISM_PATCH_APPLY_REJECTED") return;
+
+      const reason = String(message.reason || "unknown");
+      const expectedBase = String(message.expectedBase || "");
+      const currentBase = String(message.currentBase || "");
+      const rejectKey = `${reason}|${expectedBase}|${currentBase}`;
+      const now = Date.now();
+      if (
+        lastPatchRejectRef.current.key === rejectKey &&
+        now - Number(lastPatchRejectRef.current.at || 0) < 3000
+      ) {
         return;
       }
-      showToast("Prompt copied to clipboard!");
-    });
-  }, [instructionEntries, showToast, uiSettings.exportPromptLevel, uiSettings.memoResetPolicy]);
+      lastPatchRejectRef.current = { key: rejectKey, at: now };
+      pendingFullSyncRef.current = true;
+
+      const reasonText = describeReason(reason);
+      if (!uiSettings.retryFullSyncOnReject) {
+        showToast(`Smart Patch 거부됨 (${reasonText}) - 다음 전송은 Full Sync`);
+        return;
+      }
+
+      const snapshot = lastExportSnapshotRef.current;
+      if (!snapshot || snapshot.retryUsed) {
+        showToast(`Smart Patch 거부됨 (${reasonText})`);
+        return;
+      }
+      if (now - Number(snapshot.createdAt || 0) > 10 * 60 * 1000) {
+        showToast(`Smart Patch 거부됨 (${reasonText}) - 이전 컨텍스트 만료`);
+        return;
+      }
+
+      const retryKey = `${snapshot.baseFingerprint || ""}|${reason}`;
+      if (lastAutoRetryKeyRef.current === retryKey) {
+        showToast(`Smart Patch 거부됨 (${reasonText})`);
+        return;
+      }
+      lastAutoRetryKeyRef.current = retryKey;
+      snapshot.retryUsed = true;
+
+      const retried = handleExportPrompt({
+        payload: snapshot.payload,
+        instructionEntries: snapshot.instructionEntries,
+        settings: snapshot.settings,
+        forceFullSync: true,
+        skipClipboard: true,
+        keepMemos: true,
+        actionOverride: "send",
+        isRetry: true,
+        toastMessage: `Smart Patch 거부됨 (${reasonText}) -> Full Sync 재시도 전송`,
+        silentWhenNoMemo: true,
+      });
+
+      if (!retried) {
+        showToast(`Smart Patch 거부됨 (${reasonText}) - Full Sync 재시도 실패`);
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handlePatchReject);
+    return () => {
+      chrome.runtime.onMessage.removeListener(handlePatchReject);
+    };
+  }, [handleExportPrompt, showToast, uiSettings.retryFullSyncOnReject]);
 
   const handleOpenWindow = useCallback(() => {
     const payload = latestPayloadRef.current;
@@ -1174,22 +1583,13 @@ function App() {
     setExpertMode((prev) => !prev);
   }, []);
 
-  const handlePickerToggle = useCallback(() => {
-    if (!ENABLE_PICKER) return;
-    if (isPickerDisabled) {
-      const reason = runtimeCapabilities?.reasons?.picker;
-      if (reason) showToast(reason);
-      return;
-    }
-    if (runtimeCapabilities?.picker === false) {
-      const reason = runtimeCapabilities?.reasons?.picker;
-      if (reason) showToast(reason);
-    }
-    dispatchInteraction({
-      type: "TOGGLE_PICKER",
-      autoPause: uiSettings.pickerAutoPause,
+  const handleToggleViewMode = useCallback(() => {
+    setIsViewMode((prev) => {
+      const next = !prev;
+      showToast(next ? "뷰 모드로 전환됨" : "편집 모드로 전환됨");
+      return next;
     });
-  }, [isPickerDisabled, runtimeCapabilities?.picker, runtimeCapabilities?.reasons?.picker, showToast, uiSettings.pickerAutoPause]);
+  }, [showToast]);
 
   const handleFreezeToggle = useCallback(() => {
     if (isFreezeDisabled) {
@@ -1197,12 +1597,8 @@ function App() {
       if (reason) showToast(reason);
       return;
     }
-    if (runtimeCapabilities?.freeze === false) {
-      const reason = runtimeCapabilities?.reasons?.freeze;
-      if (reason) showToast(reason);
-    }
     dispatchInteraction({ type: "TOGGLE_FROZEN" });
-  }, [isFreezeDisabled, runtimeCapabilities?.freeze, runtimeCapabilities?.reasons?.freeze, showToast]);
+  }, [isFreezeDisabled, runtimeCapabilities?.reasons?.freeze, showToast]);
 
   const handleToggleSetting = useCallback((key) => {
     setUiSettings((prev) => ({
@@ -1231,12 +1627,13 @@ function App() {
           },
         };
       }
-      if (key === "memoResetPolicy") {
+      if (key === "patchFullSyncEvery") {
+        const nextValue = PATCH_FULL_SYNC_CADENCE_OPTIONS.includes(Number(value))
+          ? Number(value)
+          : DEFAULT_UI_SETTINGS.patchFullSyncEvery;
         return {
           ...prev,
-          memoResetPolicy: VALID_MEMO_RESET_POLICIES.includes(value)
-            ? value
-            : DEFAULT_UI_SETTINGS.memoResetPolicy,
+          patchFullSyncEvery: nextValue,
         };
       }
       return {
@@ -1271,60 +1668,70 @@ function App() {
   }
 
   return (
-    <div className="panel-shell">
-      <Header
-        onSaveHtml={handleSaveHtml}
-        onSnapshot={() => handleSnapshot("download")}
-        onCopy={() => handleSnapshot("clipboard")}
-        onOpenWindow={handleOpenWindow}
-        onExportPrompt={handleExportPrompt}
-        pickerActive={pickerActive}
-        onPickerToggle={handlePickerToggle}
-        isPickerDisabled={isPickerDisabled}
-        isSnapshotDisabled={isSnapshotDisabled}
-        isFreezeDisabled={isFreezeDisabled}
-        isExportPromptDisabled={isExportPromptDisabled}
-        instructionCount={instructionCount}
-        canvasFrozen={canvasFrozen}
-        onFreezeToggle={handleFreezeToggle}
-        uiSettings={uiSettings}
-        onToggleSetting={handleToggleSetting}
-        onUpdateSetting={handleUpdateSetting}
-        themeMode={uiSettings.themeMode}
-        onThemeModeChange={handleThemeModeChange}
-      />
+    <div className={`panel-shell ${isViewMode ? "is-view-mode" : ""}`}>
       <div className="viewer-container">
-        <NotesIsland
-          instructionEntries={instructionEntries}
-          instructionCount={instructionCount}
-          toastMessage={toast?.isVisible ? toast.message : ""}
-          pickerActive={pickerActive}
-          canvasFrozen={canvasFrozen}
-          onInstructionHover={handleInstructionHover}
-          onInstructionSelect={handleInstructionSelect}
-          onInstructionDelete={handleInstructionDelete}
-          onClearAllInstructions={handleClearAllInstructions}
-        />
         <div className="viewer-frame">
+          <div className="panel-shell__virtual-top">
+            <Header
+              onSaveHtml={handleSaveHtml}
+              onSnapshot={() => handleSnapshot("download")}
+              onCopy={() => handleSnapshot("clipboard")}
+              onOpenWindow={handleOpenWindow}
+              onExportPrompt={handleExportPrompt}
+              isSnapshotDisabled={isSnapshotDisabled}
+              isFreezeDisabled={isFreezeDisabled}
+              isExportPromptDisabled={isExportPromptDisabled}
+              instructionCount={instructionCount}
+              canvasFrozen={canvasFrozen}
+              onFreezeToggle={handleFreezeToggle}
+              uiSettings={uiSettings}
+              onToggleSetting={handleToggleSetting}
+              onUpdateSetting={handleUpdateSetting}
+              themeMode={uiSettings.themeMode}
+              onThemeModeChange={handleThemeModeChange}
+              isViewMode={isViewMode}
+              onToggleViewMode={handleToggleViewMode}
+              feedbackMessage={feedbackMessage}
+              feedbackActive={Boolean(toast?.isVisible)}
+            />
+          </div>
           <Viewer ref={viewerRef} onReady={handleViewerReady} />
           <div
             id="prism-capture-flash"
             ref={flashRef}
             onAnimationEnd={handleFlashAnimationEnd}
           />
+          {!isViewMode && (
+            <div className="panel-shell__virtual-bottom">
+              <CommandBar
+                onSend={handleExportPrompt}
+                onAddMemo={handleAddMemoFromCommandBar}
+                onRemoveMemo={handleRemoveMemoFromCommandBar}
+                onClearSelection={handleClearSelection}
+                selectedLine={selectedLine}
+                selectedMemoText={selectedMemoText}
+                selectionToken={focusToken}
+                isPickerActive={pickerActive}
+                isInputDisabled={isPickerDisabled}
+                isExportDisabled={isExportPromptDisabled}
+                memoCount={instructionCount}
+                rightSlot={
+                  <NotesIsland
+                    instructionEntries={instructionEntries}
+                    instructionCount={instructionCount}
+                    pickerActive={pickerActive}
+                    canvasFrozen={canvasFrozen}
+                    pulseToken={notesPulseToken}
+                    onInstructionHover={handleInstructionHover}
+                    onInstructionSelect={handleInstructionSelect}
+                    onInstructionDelete={handleInstructionDelete}
+                    onClearAllInstructions={handleClearAllInstructions}
+                  />
+                }
+              />
+            </div>
+          )}
         </div>
-        {activeInstructionLine !== null && (
-          <FloatingInput
-            line={activeInstructionLine}
-            initialValue={instructions[activeInstructionLine] || ''}
-            elementRect={activeElementRect}
-            viewerRect={viewerRef.current?.getBoundingClientRect?.()}
-            canvasFrozen={canvasFrozen}
-            onSave={handleSaveInstruction}
-            onRemove={handleRemoveInstruction}
-            onClose={handleClearSelection}
-          />
-        )}
       </div>
       {ENABLE_EXPERT_MODE && expertMode && (
         <ExpertEditor
