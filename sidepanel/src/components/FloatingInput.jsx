@@ -52,11 +52,13 @@ const FloatingInput = ({
 
     if (elementRect && viewerRect) {
         if (isBackground) {
-            // Pin to top-left of the viewer for background/global mode
+            // Pin to bottom-right of the viewer for background/global mode
+            const safeRight = Math.max(12, window.innerWidth - (viewerRect.left + viewerRect.width) + 12);
+            const safeBottom = Math.max(12, window.innerHeight - (viewerRect.top + viewerRect.height) + 12);
             posStyle = {
                 position: 'fixed',
-                left: `${viewerRect.left + 12}px`,
-                top: `${viewerRect.top + 12}px`,
+                right: `${safeRight}px`,
+                bottom: `${safeBottom}px`,
                 width: `${cardWidth}px`,
             };
         } else {

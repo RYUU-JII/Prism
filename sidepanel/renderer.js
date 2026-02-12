@@ -447,6 +447,16 @@ stage.style.position = "relative";
 stage.style.boxSizing = "border-box";
 applyInlineStyles(stage, data.rootStyles);
 stage.innerHTML = data.html;
+stage.querySelectorAll("[data-prism-picker-overlay='true'], [data-prism-svg-instruction-proxy='true']").forEach((el) => {
+el.remove();
+});
+stage.querySelectorAll(".prism-has-instruction, .prism-has-instruction--background, .prism-has-instruction--svg, .prism-has-instruction--picker-focus").forEach((el) => {
+if (!el || !el.classList) return;
+el.classList.remove("prism-has-instruction");
+el.classList.remove("prism-has-instruction--background");
+el.classList.remove("prism-has-instruction--svg");
+el.classList.remove("prism-has-instruction--picker-focus");
+});
 stage.querySelectorAll("script").forEach((el) => el.remove());
 stage.querySelectorAll("link[rel='stylesheet']").forEach((el) => el.remove());
 stage.querySelectorAll("iframe, frame, object, embed").forEach((el) => {

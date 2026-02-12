@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer } 
 import Header from './components/Header.jsx';
 import Viewer from './components/Viewer.jsx';
 import FloatingInput from './components/FloatingInput.jsx';
+import NotesIsland from './components/NotesIsland.jsx';
 import ExpertEditor from './components/ExpertEditor.jsx';
 import { performCaptureInParent } from './utils/capture';
 import { useToast } from './hooks/useToast.jsx';
@@ -12,6 +13,7 @@ const SNAPSHOT_COOLDOWN_MS = 900;
 const UI_SETTINGS_KEY = "prism-ui-settings-v3";
 const LEGACY_THEME_KEY = "prism-expert-theme";
 const VALID_THEME_MODES = ["detect", "light", "dark"];
+const VALID_MEMO_RESET_POLICIES = ["on_code_change", "on_copy", "manual"];
 const DEFAULT_RUNTIME_CAPABILITIES = Object.freeze({
   picker: true,
   snapshot: true,
@@ -23,7 +25,8 @@ const DEFAULT_UI_SETTINGS = {
   themeMode: "detect",
   lockInteractionsWhenPaused: true,
   showTooltips: true,
-  feedbackIntensity: "medium",
+  captureRange: "visible",
+  memoResetPolicy: "on_code_change",
   keepPickerActiveAfterSelect: true,
   exportPromptLevel: 2,
   pickerAutoPause: false,
@@ -47,9 +50,12 @@ function loadUiSettings() {
     const exportPromptLevel = [1, 2, 3].includes(Number(parsed?.exportPromptLevel))
       ? Number(parsed.exportPromptLevel)
       : DEFAULT_UI_SETTINGS.exportPromptLevel;
-    const feedbackIntensity = ["low", "medium", "high"].includes(parsed?.feedbackIntensity)
-      ? parsed.feedbackIntensity
-      : DEFAULT_UI_SETTINGS.feedbackIntensity;
+    const captureRange = ["visible", "full"].includes(parsed?.captureRange)
+      ? parsed.captureRange
+      : DEFAULT_UI_SETTINGS.captureRange;
+    const memoResetPolicy = VALID_MEMO_RESET_POLICIES.includes(parsed?.memoResetPolicy)
+      ? parsed.memoResetPolicy
+      : DEFAULT_UI_SETTINGS.memoResetPolicy;
     const legacyStrength = ["subtle", "medium", "strong"].includes(parsed?.highlightStrength)
       ? parsed.highlightStrength
       : DEFAULT_UI_SETTINGS.pickerHighlight.strength;
@@ -82,7 +88,8 @@ function loadUiSettings() {
           : typeof parsed?.hideHintOverlay === "boolean"
             ? !parsed.hideHintOverlay
             : DEFAULT_UI_SETTINGS.showTooltips,
-      feedbackIntensity,
+      captureRange,
+      memoResetPolicy,
       keepPickerActiveAfterSelect:
         typeof parsed?.keepPickerActiveAfterSelect === "boolean"
           ? parsed.keepPickerActiveAfterSelect
@@ -164,6 +171,26 @@ function detectKind(code) {
 
   if (/<[a-z][\s\S]*>/i.test(source)) return "html";
   return "text";
+}
+
+function resolveHintedKind(language) {
+  const value = typeof language === "string" ? language.toLowerCase() : "";
+  if (value === "html") return "html";
+  if (value === "react") return "react";
+  if (value === "vue") return "vue";
+  if (value === "angular") return "angular";
+  if (value === "svelte") return "svelte";
+  return "text";
+}
+
+function resolveRenderKind(language, code) {
+  const hinted = resolveHintedKind(language);
+  const inferred = detectKind(code);
+
+  if (inferred === "angular" || inferred === "svelte") return inferred;
+  if (hinted === "text" && inferred !== "text") return inferred;
+  if ((hinted === "react" || hinted === "vue") && inferred === "html") return "html";
+  return hinted;
 }
 
 function countNewlines(text) {
@@ -280,10 +307,17 @@ function fixRelativePaths(html, baseUrl) {
 
 function buildRenderKey(code, language, url, theme) {
   if (!code) return "";
-  const kind = language && language !== "text" ? language : detectKind(code);
+  const kind = resolveRenderKind(language, code);
   const source = normalizeSource(url);
   const resolvedTheme = theme || "light";
   return `${kind}::${resolvedTheme}::${source || ""}::${code}`;
+}
+
+function buildContentIdentity(code, language, url) {
+  if (!code) return "";
+  const kind = resolveRenderKind(language, code);
+  const source = normalizeSource(url);
+  return `${kind}::${source || ""}::${code}`;
 }
 
 const initialInteractionState = {
@@ -364,6 +398,45 @@ function interactionReducer(state, action) {
         activeElementRect: null,
       };
     }
+    case "REMOVE_INSTRUCTION_BY_LINE": {
+      const line = Number(action.line);
+      if (!Number.isFinite(line) || line <= 0) return state;
+      const key = String(line);
+      if (!Object.prototype.hasOwnProperty.call(state.instructions, key)) return state;
+      const nextInstructions = { ...state.instructions };
+      delete nextInstructions[key];
+      const shouldClearActive = state.activeInstructionLine === line;
+      return {
+        ...state,
+        instructions: nextInstructions,
+        activeInstructionLine: shouldClearActive ? null : state.activeInstructionLine,
+        activeElementRect: shouldClearActive ? null : state.activeElementRect,
+      };
+    }
+    case "CLEAR_INSTRUCTIONS":
+      return {
+        ...state,
+        instructions: {},
+        activeInstructionLine: null,
+        activeElementRect: null,
+      };
+    case "SET_INSTRUCTIONS": {
+      const nextInstructions =
+        action.instructions && typeof action.instructions === "object"
+          ? action.instructions
+          : {};
+      const activeLine = state.activeInstructionLine;
+      const keepActive =
+        Number.isFinite(activeLine) &&
+        activeLine > 0 &&
+        Object.prototype.hasOwnProperty.call(nextInstructions, String(activeLine));
+      return {
+        ...state,
+        instructions: nextInstructions,
+        activeInstructionLine: keepActive ? activeLine : null,
+        activeElementRect: keepActive ? state.activeElementRect : null,
+      };
+    }
     case "CLEAR_SELECTION":
       return { ...state, activeInstructionLine: null, activeElementRect: null };
     default:
@@ -380,6 +453,7 @@ function App() {
     initialInteractionState
   );
   const [runtimeCapabilities, setRuntimeCapabilities] = useState(() => DEFAULT_RUNTIME_CAPABILITIES);
+  const [previewInstructionLine, setPreviewInstructionLine] = useState(null);
   const {
     pickerActive,
     focusLine,
@@ -402,23 +476,38 @@ function App() {
   const panelPortRef = useRef(null);
   const snapshotCooldownRef = useRef(0);
   const flashRef = useRef(null);
-  const { ToastComponent, showToast } = useToast();
+  const instructionsRef = useRef(instructions);
+  const contentIdentityRef = useRef("");
+  const { toast, showToast } = useToast();
   const activeTheme = useMemo(
     () => resolveThemeModeTheme(uiSettings.themeMode, latestPayload?.theme),
     [uiSettings.themeMode, latestPayload?.theme]
   );
+  const instructionEntries = useMemo(() => {
+    const codeLines = String(latestPayload?.code || "").split("\n");
+    return Object.entries(instructions)
+      .map(([line, memoText]) => {
+        const numericLine = Number(line) || 1;
+        return {
+          line: numericLine,
+          memoText: String(memoText || ""),
+          sourceLineText: codeLines[numericLine - 1] || "",
+        };
+      })
+      .sort((a, b) => a.line - b.line);
+  }, [instructions, latestPayload?.code]);
+  const instructionCount = instructionEntries.length;
   const isHtmlPayload = latestPayload?.language === "html";
+  const hasRenderableHtml = Boolean(latestPayload?.code) && isHtmlPayload;
   const isPickerDisabled =
     !ENABLE_PICKER ||
-    !isHtmlPayload ||
-    runtimeCapabilities?.picker === false;
+    !hasRenderableHtml;
   const isSnapshotDisabled =
     !latestPayload?.code ||
     (isHtmlPayload && runtimeCapabilities?.snapshot === false);
   const isFreezeDisabled =
     !latestPayload?.code ||
-    !isHtmlPayload ||
-    (isHtmlPayload && runtimeCapabilities?.freeze === false);
+    !isHtmlPayload;
   const isExportPromptDisabled =
     !latestPayload?.code ||
     !isHtmlPayload ||
@@ -439,12 +528,12 @@ function App() {
   }, [latestPayload]);
 
   useEffect(() => {
-    document.body.dataset.theme = activeTheme;
-  }, [activeTheme]);
+    instructionsRef.current = instructions;
+  }, [instructions]);
 
   useEffect(() => {
-    document.body.dataset.feedbackIntensity = uiSettings.feedbackIntensity || "medium";
-  }, [uiSettings.feedbackIntensity]);
+    document.body.dataset.theme = activeTheme;
+  }, [activeTheme]);
 
   useEffect(() => {
     localStorage.setItem(UI_SETTINGS_KEY, JSON.stringify(uiSettings));
@@ -489,10 +578,23 @@ function App() {
       pickerActive: Boolean(ENABLE_PICKER && pickerActive),
       frozen: Boolean(canvasFrozen),
       instructions,
-      instructionsCount: Object.keys(instructions).length,
+      instructionsCount: instructionCount,
+      previewLine: previewInstructionLine,
+      editingLine:
+        Number.isFinite(activeInstructionLine) && activeInstructionLine > 0
+          ? activeInstructionLine
+          : null,
       settings: uiSettings,
     };
-  }, [canvasFrozen, instructions, pickerActive, uiSettings]);
+  }, [
+    activeInstructionLine,
+    canvasFrozen,
+    instructionCount,
+    instructions,
+    pickerActive,
+    previewInstructionLine,
+    uiSettings,
+  ]);
 
   const sendUiState = useCallback((payloadOverride) => {
     const viewer = viewerRef.current;
@@ -510,10 +612,11 @@ function App() {
       latestPayloadRef.current = null;
       setLatestPayload(null);
       setRuntimeCapabilities(DEFAULT_RUNTIME_CAPABILITIES);
+      contentIdentityRef.current = "";
       postToSandbox({ code: "", language: "text", url: "", theme: renderTheme || "light" });
       return;
     }
-    const kind = language && language !== "text" ? language : detectKind(code);
+    const kind = resolveRenderKind(language, code);
     const source = normalizeSource(url);
     const fixedCode = fixRelativePaths(code, source);
     const sandboxCode = kind === "html" ? addPrismLineAttributes(fixedCode) : fixedCode;
@@ -528,16 +631,51 @@ function App() {
     });
   }, [postToSandbox]);
 
+  const applyInstructionPolicyForContentChange = useCallback((nextCode) => {
+    const currentInstructions = instructionsRef.current || {};
+    const currentKeys = Object.keys(currentInstructions);
+    if (currentKeys.length === 0) return;
+
+    if (uiSettings.memoResetPolicy === "on_code_change") {
+      dispatchInteraction({ type: "CLEAR_INSTRUCTIONS" });
+      setPreviewInstructionLine(null);
+      showToast("코드 변경으로 메모가 초기화되었습니다.");
+      return;
+    }
+
+    const maxLine = Math.max(1, String(nextCode || "").split("\n").length);
+    const nextInstructions = {};
+    currentKeys.forEach((key) => {
+      const line = Number(key);
+      if (!Number.isFinite(line) || line <= 0 || line > maxLine) return;
+      nextInstructions[String(line)] = currentInstructions[key];
+    });
+    const removedCount = currentKeys.length - Object.keys(nextInstructions).length;
+    if (removedCount <= 0) return;
+
+    dispatchInteraction({ type: "SET_INSTRUCTIONS", instructions: nextInstructions });
+    setPreviewInstructionLine((prev) =>
+      prev && Object.prototype.hasOwnProperty.call(nextInstructions, String(prev)) ? prev : null
+    );
+    showToast(`코드 변경으로 ${removedCount}개 메모가 제거되었습니다.`);
+  }, [showToast, uiSettings.memoResetPolicy]);
+
   const updateViewer = useCallback((code, language, url, sourceTheme) => {
     const resolvedTheme = resolveThemeModeTheme(uiSettings.themeMode, sourceTheme);
     if (!code) {
       lastRenderKeyRef.current = "";
       hasRenderedOnceRef.current = false;
+      contentIdentityRef.current = "";
       renderPayload("", "text", "", sourceTheme, resolvedTheme);
       return;
     }
-    const kind = language && language !== "text" ? language : detectKind(code);
+    const kind = resolveRenderKind(language, code);
     const source = normalizeSource(url);
+    const contentIdentity = buildContentIdentity(code, kind, source);
+    if (contentIdentityRef.current && contentIdentityRef.current !== contentIdentity) {
+      applyInstructionPolicyForContentChange(code);
+    }
+    contentIdentityRef.current = contentIdentity;
     const renderKey = buildRenderKey(code, kind, source, resolvedTheme);
     if (hasRenderedOnceRef.current && renderKey === lastRenderKeyRef.current) {
       return;
@@ -545,7 +683,7 @@ function App() {
     hasRenderedOnceRef.current = true;
     lastRenderKeyRef.current = renderKey;
     renderPayload(code, kind, source, sourceTheme, resolvedTheme);
-  }, [renderPayload, uiSettings.themeMode]);
+  }, [applyInstructionPolicyForContentChange, renderPayload, uiSettings.themeMode]);
 
   const sendPanelStatus = useCallback((open) => {
     const tabId = currentTabIdRef.current;
@@ -825,6 +963,11 @@ function App() {
         return;
       }
 
+      if (data.type === "PRISM_INSTRUCTION_NAVIGATE_MISS") {
+        showToast(data.reason || "지정한 메모 대상 요소를 찾지 못했습니다.");
+        return;
+      }
+
       if (data.type === "PRISM_EXPORT_FOR_CAPTURE") {
         const action = pendingSnapshotActionRef.current || "download";
         pendingSnapshotActionRef.current = null;
@@ -909,10 +1052,53 @@ function App() {
     showToast(`Line ${lineNumber} 메모 삭제됨`);
   }, [activeInstructionLine, showToast]);
 
+  const handleInstructionHover = useCallback((line) => {
+    const nextLine = Number(line);
+    if (!Number.isFinite(nextLine) || nextLine <= 0) {
+      setPreviewInstructionLine(null);
+      return;
+    }
+    if (!Object.prototype.hasOwnProperty.call(instructionsRef.current || {}, String(nextLine))) {
+      setPreviewInstructionLine(null);
+      return;
+    }
+    setPreviewInstructionLine(nextLine);
+  }, []);
+
+  const handleInstructionSelect = useCallback((line) => {
+    const lineNumber = Number(line);
+    if (!Number.isFinite(lineNumber) || lineNumber <= 0) return;
+    const viewer = viewerRef.current;
+    setPreviewInstructionLine(null);
+    if (!viewer || !viewer.contentWindow || !viewerReadyRef.current) {
+      showToast("Viewer is not ready yet.");
+      return;
+    }
+    viewer.contentWindow.postMessage(
+      { type: "PRISM_INSTRUCTION_NAVIGATE", line: lineNumber, behavior: "smooth" },
+      "*"
+    );
+  }, [showToast]);
+
+  const handleInstructionDelete = useCallback((line) => {
+    const lineNumber = Number(line);
+    if (!Number.isFinite(lineNumber) || lineNumber <= 0) return;
+    dispatchInteraction({ type: "REMOVE_INSTRUCTION_BY_LINE", line: lineNumber });
+    setPreviewInstructionLine((prev) => (prev === lineNumber ? null : prev));
+    showToast(`Line ${lineNumber} 메모 삭제됨`);
+  }, [showToast]);
+
+  const handleClearAllInstructions = useCallback(() => {
+    if (instructionCount === 0) return;
+    dispatchInteraction({ type: "CLEAR_INSTRUCTIONS" });
+    setPreviewInstructionLine(null);
+    showToast("모든 메모가 삭제되었습니다.");
+  }, [instructionCount, showToast]);
+
   const handleExportPrompt = useCallback(() => {
     const payload = latestPayloadRef.current;
     if (!payload?.code) return;
-    if (Object.keys(instructions).length === 0) {
+    if (instructionEntries.length === 0) {
       showToast("먼저 요소에 메모를 남겨주세요.");
       return;
     }
@@ -924,13 +1110,14 @@ function App() {
     let prompt = "Please modify the following HTML based on the provided instructions.\n\n";
 
     prompt += "### INSTRUCTIONS\n";
-    Object.entries(instructions).forEach(([line, text]) => {
-      prompt += `- Line ${line}: ${text}\n`;
+    instructionEntries.forEach(({ line, memoText }) => {
+      prompt += `- Line ${line}: ${memoText}\n`;
     });
 
     if (detailLevel >= 2) {
       prompt += "\n### TARGET SNIPPETS\n";
-      Object.keys(instructions).forEach(lineNum => {
+      instructionEntries.forEach(({ line }) => {
+        const lineNum = String(line);
         const idx = Number(lineNum) - 1;
         const start = Math.max(0, idx - 2);
         const end = Math.min(lines.length, idx + 3);
@@ -946,9 +1133,15 @@ function App() {
     }
 
     navigator.clipboard.writeText(prompt).then(() => {
+      if (uiSettings.memoResetPolicy === "on_copy") {
+        dispatchInteraction({ type: "CLEAR_INSTRUCTIONS" });
+        setPreviewInstructionLine(null);
+        showToast("Prompt copied. 메모가 초기화되었습니다.");
+        return;
+      }
       showToast("Prompt copied to clipboard!");
     });
-  }, [instructions, showToast, uiSettings.exportPromptLevel]);
+  }, [instructionEntries, showToast, uiSettings.exportPromptLevel, uiSettings.memoResetPolicy]);
 
   const handleOpenWindow = useCallback(() => {
     const payload = latestPayloadRef.current;
@@ -988,11 +1181,15 @@ function App() {
       if (reason) showToast(reason);
       return;
     }
+    if (runtimeCapabilities?.picker === false) {
+      const reason = runtimeCapabilities?.reasons?.picker;
+      if (reason) showToast(reason);
+    }
     dispatchInteraction({
       type: "TOGGLE_PICKER",
       autoPause: uiSettings.pickerAutoPause,
     });
-  }, [isPickerDisabled, runtimeCapabilities?.reasons?.picker, showToast, uiSettings.pickerAutoPause]);
+  }, [isPickerDisabled, runtimeCapabilities?.picker, runtimeCapabilities?.reasons?.picker, showToast, uiSettings.pickerAutoPause]);
 
   const handleFreezeToggle = useCallback(() => {
     if (isFreezeDisabled) {
@@ -1000,8 +1197,12 @@ function App() {
       if (reason) showToast(reason);
       return;
     }
+    if (runtimeCapabilities?.freeze === false) {
+      const reason = runtimeCapabilities?.reasons?.freeze;
+      if (reason) showToast(reason);
+    }
     dispatchInteraction({ type: "TOGGLE_FROZEN" });
-  }, [isFreezeDisabled, runtimeCapabilities?.reasons?.freeze, showToast]);
+  }, [isFreezeDisabled, runtimeCapabilities?.freeze, runtimeCapabilities?.reasons?.freeze, showToast]);
 
   const handleToggleSetting = useCallback((key) => {
     setUiSettings((prev) => ({
@@ -1028,6 +1229,14 @@ function App() {
             ...(prev.pickerHighlight || DEFAULT_UI_SETTINGS.pickerHighlight),
             color: value,
           },
+        };
+      }
+      if (key === "memoResetPolicy") {
+        return {
+          ...prev,
+          memoResetPolicy: VALID_MEMO_RESET_POLICIES.includes(value)
+            ? value
+            : DEFAULT_UI_SETTINGS.memoResetPolicy,
         };
       }
       return {
@@ -1063,7 +1272,6 @@ function App() {
 
   return (
     <div className="panel-shell">
-      <ToastComponent />
       <Header
         onSaveHtml={handleSaveHtml}
         onSnapshot={() => handleSnapshot("download")}
@@ -1076,7 +1284,7 @@ function App() {
         isSnapshotDisabled={isSnapshotDisabled}
         isFreezeDisabled={isFreezeDisabled}
         isExportPromptDisabled={isExportPromptDisabled}
-        instructionCount={Object.keys(instructions).length}
+        instructionCount={instructionCount}
         canvasFrozen={canvasFrozen}
         onFreezeToggle={handleFreezeToggle}
         uiSettings={uiSettings}
@@ -1086,6 +1294,17 @@ function App() {
         onThemeModeChange={handleThemeModeChange}
       />
       <div className="viewer-container">
+        <NotesIsland
+          instructionEntries={instructionEntries}
+          instructionCount={instructionCount}
+          toastMessage={toast?.isVisible ? toast.message : ""}
+          pickerActive={pickerActive}
+          canvasFrozen={canvasFrozen}
+          onInstructionHover={handleInstructionHover}
+          onInstructionSelect={handleInstructionSelect}
+          onInstructionDelete={handleInstructionDelete}
+          onClearAllInstructions={handleClearAllInstructions}
+        />
         <div className="viewer-frame">
           <Viewer ref={viewerRef} onReady={handleViewerReady} />
           <div

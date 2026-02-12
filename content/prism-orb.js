@@ -37,12 +37,28 @@ function safeSendMessage(message, callback) {
 
 function detectKind(code) {
   if (!code || typeof code !== "string") return "text";
+  const source = String(code);
+
+  // Stack trace blocks often include "<anonymous>" and repeated "at ..." frames.
+  // Treat them as plain text to avoid false positives.
+  const lines = source
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length >= 3) {
+    const atLineCount = lines.filter((line) => /^at\s+/.test(line)).length;
+    const frameCount = lines.filter((line) =>
+      /^at\s+.+\((?:https?:\/\/|file:\/\/|webpack:|blob:|about:|<anonymous>|[^)]+:\d+:\d+).*\)$/.test(line) ||
+      /^at\s+.+:\d+:\d+$/.test(line)
+    ).length;
+    if (frameCount >= 2 && atLineCount >= 2) return "text";
+  }
 
   // 1. Explicit HTML Document — 단, 시각적 콘텐츠가 있어야 함
-  if (/^\s*<!DOCTYPE\s+html/i.test(code) || /<html[\s>]/i.test(code)) {
-    const hasBody = /<body[\s>]/i.test(code);
-    const hasVisualTag = /<(div|span|p|h[1-6]|section|article|main|nav|header|footer|form|table|ul|ol|li|img|canvas|svg|video|audio|button|input|a|figure)\b/i.test(code);
-    const isComplete = /<\/html\s*>/i.test(code);
+  if (/^\s*<!DOCTYPE\s+html/i.test(source) || /<html[\s>]/i.test(source)) {
+    const hasBody = /<body[\s>]/i.test(source);
+    const hasVisualTag = /<(div|span|p|h[1-6]|section|article|main|nav|header|footer|form|table|ul|ol|li|img|canvas|svg|video|audio|button|input|a|figure)\b/i.test(source);
+    const isComplete = /<\/html\s*>/i.test(source);
     if (hasBody || hasVisualTag || isComplete) return "html";
     // head만 있으면 다음 규칙으로 fall through
   }
@@ -60,23 +76,26 @@ function detectKind(code) {
     /:\w+\s*=/
   ];
 
-  if (sourceIndicators.some(r => r.test(code))) {
-    if (/\bv-|@click|:\w+=|<template>|from\s+['"]vue['"]/.test(code)) return "vue";
+  if (sourceIndicators.some(r => r.test(source))) {
+    if (/\bv-|@click|:\w+=|<template>|from\s+['"]vue['"]/.test(source)) return "vue";
     return "react";
   }
 
   // 3. Framework specific keywords (Hooks, API)
-  if (/useState\s*\(|useEffect\s*\(|use[A-Z][a-zA-Z]*\s*\(|ReactDOM/.test(code)) return "react";
-  if (/createApp\s*\(|defineComponent\s*\(|from\s+['"]vue['"]/.test(code)) return "vue";
+  if (/useState\s*\(|useEffect\s*\(|use[A-Z][a-zA-Z]*\s*\(|ReactDOM/.test(source)) return "react";
+  if (/createApp\s*\(|defineComponent\s*\(|from\s+['"]vue['"]/.test(source)) return "vue";
 
   // 4. Generic HTML Fragment (엄격한 판별)
   // 비시각적/구조적 태그를 모두 제거한 후 시각적 콘텐츠가 남는지 확인
-  const stripped = code.replace(/<\/?(!doctype|html|head|body|meta|link|title|script|style|br|hr|!--)[\s\S]*?>/gi, "").trim();
+  const stripped = source.replace(/<\/?(!doctype|html|head|body|meta|link|title|script|style|br|hr|!--)[\s\S]*?>/gi, "").trim();
 
   if (/<[a-z][\s\S]*>/i.test(stripped)) {
     // 시각적 태그의 닫는 태그가 있거나, 시각적 태그가 2개 이상
-    const hasVisualClosing = /<\/(div|span|p|h[1-6]|section|article|main|nav|header|footer|form|table|ul|ol|li|a|figure|button|label|textarea|select|details|summary|dialog|aside)\s*>/i.test(code);
-    const visualTagCount = (stripped.match(/<[a-z][^>]*>/gi) || []).length;
+    const hasVisualClosing = /<\/(div|span|p|h[1-6]|section|article|main|nav|header|footer|form|table|ul|ol|li|a|figure|button|label|textarea|select|details|summary|dialog|aside)\s*>/i.test(source);
+    const visualTagCount = (
+      stripped.match(/<(div|span|p|h[1-6]|section|article|main|nav|header|footer|form|table|thead|tbody|tfoot|tr|td|th|ul|ol|li|img|canvas|svg|video|audio|button|input|a|figure|label|textarea|select|details|summary|dialog|aside)\b[^>]*>/gi) ||
+      []
+    ).length;
     if (hasVisualClosing || visualTagCount >= 2) return "html";
   }
 

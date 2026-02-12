@@ -31,6 +31,7 @@ const Header = ({
   const [settingsTab, setSettingsTab] = useState("core");
   const shellRef = useRef(null);
   const pickerHighlight = uiSettings?.pickerHighlight || {};
+  const memoResetPolicy = uiSettings?.memoResetPolicy || "on_code_change";
   const showTooltips = uiSettings?.showTooltips !== false;
   const activeThemeMode =
     themeMode === "light" || themeMode === "dark" ? themeMode : "detect";
@@ -65,7 +66,7 @@ const Header = ({
   }, [settingsOpen, utilityMenuOpen]);
 
   useEffect(() => {
-    if (settingsOpen) return;
+    if (!settingsOpen) return;
     setUtilityMenuOpen(false);
   }, [settingsOpen]);
 
@@ -108,8 +109,15 @@ const Header = ({
       extraClass: "panel-shell__action--export",
       icon: (
         <>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z" />
+          <svg
+            className="panel-shell__export-stars"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            shapeRendering="geometricPrecision"
+          >
+            <path d="M8.2 2.6 10 7.2 14.6 9 10 10.8 8.2 15.4 6.4 10.8 1.8 9 6.4 7.2Z" />
+            <path d="M17.2 2.7 18.2 5.3 20.8 6.3 18.2 7.3 17.2 9.9 16.2 7.3 13.6 6.3 16.2 5.3Z" />
+            <path d="M17.8 12.9 18.6 15 20.7 15.8 18.6 16.6 17.8 18.7 17 16.6 14.9 15.8 17 15Z" />
           </svg>
           {instructionCount > 0 && (
             <span className="action-count-badge">{instructionCount}</span>
@@ -347,6 +355,28 @@ const Header = ({
                 ))}
               </div>
             </div>
+            <div className="panel-shell__setting-row is-stacked">
+              <div className="panel-shell__setting-copy">
+                <div className="panel-shell__setting-title">Memo Reset Policy</div>
+                <div className="panel-shell__setting-description">메모 자동 초기화 기준</div>
+              </div>
+              <div className="panel-shell__segmented">
+                {[
+                  { id: "on_code_change", label: "On change" },
+                  { id: "on_copy", label: "On copy" },
+                  { id: "manual", label: "Manual" },
+                ].map((policy) => (
+                  <button
+                    key={policy.id}
+                    type="button"
+                    className={`panel-shell__segment ${memoResetPolicy === policy.id ? "is-active" : ""}`}
+                    onClick={() => onUpdateSetting?.("memoResetPolicy", policy.id)}
+                  >
+                    {policy.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="panel-shell__setting-row is-stacked panel-shell__setting-row--picker">
               <div className="panel-shell__picker-heading">
                 <div className="panel-shell__setting-copy">
@@ -409,18 +439,21 @@ const Header = ({
             </div>
             <div className="panel-shell__setting-row is-stacked">
               <div className="panel-shell__setting-copy">
-                <div className="panel-shell__setting-title">Feedback Intensity</div>
-                <div className="panel-shell__setting-description">시각 피드백 강도</div>
+                <div className="panel-shell__setting-title">Capture Range</div>
+                <div className="panel-shell__setting-description">보이는 영역 또는 전체 콘텐츠</div>
               </div>
               <div className="panel-shell__segmented">
-                {["low", "medium", "high"].map((level) => (
+                {[
+                  { id: "visible", label: "Visible" },
+                  { id: "full", label: "Full" },
+                ].map((option) => (
                   <button
-                    key={level}
+                    key={option.id}
                     type="button"
-                    className={`panel-shell__segment ${uiSettings?.feedbackIntensity === level ? "is-active" : ""}`}
-                    onClick={() => onUpdateSetting?.("feedbackIntensity", level)}
+                    className={`panel-shell__segment ${uiSettings?.captureRange === option.id ? "is-active" : ""}`}
+                    onClick={() => onUpdateSetting?.("captureRange", option.id)}
                   >
-                    {level}
+                    {option.label}
                   </button>
                 ))}
               </div>

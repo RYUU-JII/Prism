@@ -22,6 +22,8 @@ let uiState = {
   pickerActive: false,
   frozen: false,
   instructions: {},
+  previewLine: null,
+  editingLine: null,
   settings: { ...DEFAULT_UI_SETTINGS }
 };
 // Dynamic library loader
@@ -241,7 +243,7 @@ function collectCanvasSnapshots(scope) {
   });
 }
 
-// Capture with the current viewer width and full content height.
+// Capture either visible viewport or full content, based on UI setting.
 function captureSnapshot() {
   const frame = root.querySelector("iframe");
 
@@ -285,17 +287,34 @@ function captureSnapshot() {
     ];
 
     const rootRect = root.getBoundingClientRect();
-    const captureWidth = Math.max(
+    const visibleWidth = Math.max(
       1,
       Math.ceil(rootRect.width || root.clientWidth || window.innerWidth || 0)
     );
-    const height = Math.max(root.scrollHeight, root.offsetHeight, 1);
+    const visibleHeight = Math.max(
+      1,
+      Math.ceil(rootRect.height || root.clientHeight || window.innerHeight || 0)
+    );
+    const fullWidth = Math.max(
+      visibleWidth,
+      Math.ceil(root.scrollWidth || 0),
+      Math.ceil(root.offsetWidth || 0)
+    );
+    const fullHeight = Math.max(
+      visibleHeight,
+      Math.ceil(root.scrollHeight || 0),
+      Math.ceil(root.offsetHeight || 0)
+    );
+    const captureRange = uiState?.settings?.captureRange === "full" ? "full" : "visible";
+    const captureWidth = captureRange === "full" ? fullWidth : visibleWidth;
+    const captureHeight = captureRange === "full" ? fullHeight : visibleHeight;
 
     const payload = {
       type: "PRISM_EXPORT_FOR_CAPTURE",
       html: root.innerHTML,
       width: captureWidth,
-      height,
+      height: captureHeight,
+      captureRange,
       classes: document.documentElement.className + " " + root.className,
       bodyClass: document.body.className || "",
       bodyStyles: pickStyles(bodyStyle, keys),
@@ -338,6 +357,11 @@ window.addEventListener("message", (event) => {
     return;
   }
 
+  if (data.type === "PRISM_INSTRUCTION_NAVIGATE_MISS" && event.source === iframeWindow) {
+    window.parent.postMessage(data, "*");
+    return;
+  }
+
   if (
     (data.type === "PRISM_RUNTIME_CAPABILITIES" ||
       data.type === "PRISM_CAPTURE_UNSUPPORTED" ||
@@ -355,10 +379,20 @@ window.addEventListener("message", (event) => {
   }
 
   if (data.type === "PRISM_UI_STATE") {
+    const previewLine = Number(data.previewLine);
+    const editingLine = Number(data.editingLine);
     uiState = {
       pickerActive: Boolean(data.pickerActive),
       frozen: Boolean(data.frozen),
       instructions: data.instructions || {},
+      previewLine:
+        Number.isFinite(previewLine) && previewLine > 0
+          ? previewLine
+          : null,
+      editingLine:
+        Number.isFinite(editingLine) && editingLine > 0
+          ? editingLine
+          : null,
       settings: normalizeUiSettings(data.settings)
     };
     if (iframeWindow) {
@@ -371,13 +405,31 @@ window.addEventListener("message", (event) => {
         pickerActive: uiState.pickerActive,
         frozen: uiState.frozen,
         hasIframe: Boolean(iframeWindow),
-        instructionsCount: Object.keys(uiState.instructions).length
+        instructionsCount: Object.keys(uiState.instructions).length,
+        previewLine: uiState.previewLine,
+        editingLine: uiState.editingLine
       }
     }, "*");
     return;
   }
 
   if (event.source !== window.parent) return;
+
+  if (data.type === "PRISM_INSTRUCTION_NAVIGATE") {
+    if (iframeWindow) {
+      iframeWindow.postMessage(data, "*");
+    } else {
+      window.parent.postMessage(
+        {
+          type: "PRISM_INSTRUCTION_NAVIGATE_MISS",
+          line: Number(data.line) || null,
+          reason: "Renderer is not ready yet."
+        },
+        "*"
+      );
+    }
+    return;
+  }
 
   if (data.type === "RENDER") {
     const kind = resolveRenderKind(data.language, data.code);

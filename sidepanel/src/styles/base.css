@@ -57,18 +57,6 @@ body::after {
   filter: blur(110px);
 }
 
-body[data-feedback-intensity="low"] {
-  --capture-flash-duration: 0.42s;
-  --capture-flash-peak: 0.44;
-  --capture-flash-mid: 0.2;
-}
-
-body[data-feedback-intensity="high"] {
-  --capture-flash-duration: 0.56s;
-  --capture-flash-peak: 0.66;
-  --capture-flash-mid: 0.34;
-}
-
 #root {
   height: 100vh;
   min-height: 100vh;
