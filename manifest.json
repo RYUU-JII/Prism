@@ -16,9 +16,15 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["content/prism-orb.js"],
+      "js": ["content/intelligent-extractor.js", "content/prism-orb.js"],
       "css": ["content/prism-orb.css"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content/network-probe-main.js"],
+      "matches": ["<all_urls>"]
     }
   ],
   "side_panel": { "default_path": "sidepanel/dist/index.html" },

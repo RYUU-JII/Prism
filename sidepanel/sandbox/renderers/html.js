@@ -203,6 +203,7 @@ async function renderHtml(code, theme) {
       let prismInteractionLockStyle = null;
       let prismInstructions = {};
       let prismFrozen = false;
+      let prismViewMode = false;
       let prismSettings = {
         lockInteractionsWhenPaused: true,
         keepPickerActiveAfterSelect: true,
@@ -832,6 +833,11 @@ async function renderHtml(code, theme) {
 
         const keys = Object.keys(prismInstructions);
         const hasEditingLine = Number.isFinite(prismEditingLine) && prismEditingLine > 0;
+        if (prismViewMode) {
+          removeInstructionStyles();
+          clearPickerHoverFeedback();
+          return;
+        }
         if (keys.length === 0 && !hasEditingLine) {
           removeInstructionStyles();
           return;
@@ -1336,7 +1342,8 @@ async function renderHtml(code, theme) {
         const shouldLock =
           prismSettings.lockInteractionsWhenPaused &&
           prismFrozen &&
-          !prismPickerActive;
+          !prismPickerActive &&
+          !prismViewMode;
         if (shouldLock) {
           ensureInteractionLockStyles();
           document.body.classList.add("prism-interaction-locked");
@@ -1350,7 +1357,8 @@ async function renderHtml(code, theme) {
       }
 
       function setPickerActive(active) {
-        if (active) {
+        const nextActive = Boolean(active) && !prismViewMode;
+        if (nextActive) {
           const caps = evaluateRuntimeCapabilities();
           if (caps.picker === false) {
             prismPickerActive = false;
@@ -1369,7 +1377,7 @@ async function renderHtml(code, theme) {
           }
         }
 
-        prismPickerActive = Boolean(active);
+        prismPickerActive = nextActive;
         document.body.style.cursor = prismPickerActive ? "crosshair" : "";
         if (prismPickerActive) {
           ensurePickerPointerStyles();
@@ -1393,6 +1401,7 @@ async function renderHtml(code, theme) {
         const editingLine = Number(safeState.editingLine);
         prismSettings = normalizeSettings(safeState.settings);
         applyVisualSettings();
+        prismViewMode = Boolean(safeState.isViewMode);
         prismInstructions = safeState.instructions || {};
         prismPreviewLine =
           Number.isFinite(previewLine) && previewLine > 0
@@ -1402,6 +1411,10 @@ async function renderHtml(code, theme) {
           Number.isFinite(editingLine) && editingLine > 0
             ? editingLine
             : null;
+        if (prismViewMode) {
+          prismPreviewLine = null;
+          prismEditingLine = null;
+        }
         setPickerActive(Boolean(safeState.pickerActive));
         setFrozen(Boolean(safeState.frozen));
         queueRuntimeCapabilities();

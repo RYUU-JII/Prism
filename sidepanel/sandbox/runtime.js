@@ -24,6 +24,7 @@ let uiState = {
   instructions: {},
   previewLine: null,
   editingLine: null,
+  isViewMode: false,
   settings: { ...DEFAULT_UI_SETTINGS }
 };
 // Dynamic library loader
@@ -393,6 +394,7 @@ window.addEventListener("message", (event) => {
         Number.isFinite(editingLine) && editingLine > 0
           ? editingLine
           : null,
+      isViewMode: Boolean(data.isViewMode),
       settings: normalizeUiSettings(data.settings)
     };
     if (iframeWindow) {
@@ -407,7 +409,8 @@ window.addEventListener("message", (event) => {
         hasIframe: Boolean(iframeWindow),
         instructionsCount: Object.keys(uiState.instructions).length,
         previewLine: uiState.previewLine,
-        editingLine: uiState.editingLine
+        editingLine: uiState.editingLine,
+        isViewMode: uiState.isViewMode
       }
     }, "*");
     return;
