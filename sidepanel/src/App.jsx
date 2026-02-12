@@ -6,161 +6,25 @@ import NotesIsland from './components/NotesIsland.jsx';
 import ExpertEditor from './components/ExpertEditor.jsx';
 import { performCaptureInParent } from './utils/capture';
 import { useToast } from './hooks/useToast.jsx';
+import { buildExportPrompt } from './core/prompt/exportPrompt.js';
+import {
+  PATCH_FULL_SYNC_CADENCE_OPTIONS,
+  UI_SETTINGS_KEY,
+  VALID_THEME_MODES,
+  DEFAULT_UI_SETTINGS,
+  loadUiSettings,
+  resolveThemeModeTheme,
+} from './core/settings/uiSettings.js';
 
 const ENABLE_EXPERT_MODE = false;
 const ENABLE_PICKER = true;
 const SNAPSHOT_COOLDOWN_MS = 900;
-const PATCH_FULL_SYNC_CADENCE_OPTIONS = [0, 2, 3, 5, 8];
-const UI_SETTINGS_KEY = "prism-ui-settings-v3";
-const LEGACY_THEME_KEY = "prism-expert-theme";
-const CORE_POLICY_PROFILE_VERSION = 1;
-const AUTO_IMPORT_DEFAULT_VERSION = 1;
-const VALID_THEME_MODES = ["detect", "light", "dark"];
 const DEFAULT_RUNTIME_CAPABILITIES = Object.freeze({
   picker: true,
   snapshot: true,
   freeze: true,
   reasons: {},
 });
-
-const DEFAULT_UI_SETTINGS = {
-  themeMode: "detect",
-  lockInteractionsWhenPaused: true,
-  showTooltips: true,
-  captureRange: "visible",
-  memoResetPolicy: "on_copy",
-  keepPickerActiveAfterSelect: true,
-  pickerAutoPause: false,
-  pickerHighlight: {
-    strength: "medium",
-    color: "#14b8a6",
-  },
-  aiResponseMode: "patch",
-  adaptiveResponseRouting: true,
-  autoImportResponse: false,
-  autoImportResponseVersion: AUTO_IMPORT_DEFAULT_VERSION,
-  patchFullSyncEvery: 0,
-  retryFullSyncOnReject: false,
-  exportAction: "inject",
-  corePolicyProfileVersion: CORE_POLICY_PROFILE_VERSION,
-};
-
-function loadUiSettings() {
-  try {
-    const raw = localStorage.getItem(UI_SETTINGS_KEY);
-    if (!raw) return DEFAULT_UI_SETTINGS;
-    const parsed = JSON.parse(raw);
-    const legacyTheme = localStorage.getItem(LEGACY_THEME_KEY);
-    const themeMode = VALID_THEME_MODES.includes(parsed?.themeMode)
-      ? parsed.themeMode
-      : legacyTheme === "light" || legacyTheme === "dark"
-        ? legacyTheme
-        : DEFAULT_UI_SETTINGS.themeMode;
-    const storedProfileVersion = Number(parsed?.corePolicyProfileVersion || 0);
-    const shouldApplyCorePolicyProfile = storedProfileVersion < CORE_POLICY_PROFILE_VERSION;
-    const captureRange = ["visible", "full"].includes(parsed?.captureRange)
-      ? parsed.captureRange
-      : DEFAULT_UI_SETTINGS.captureRange;
-    let memoResetPolicy = ["on_code_change", "on_copy", "manual"].includes(parsed?.memoResetPolicy)
-      ? parsed.memoResetPolicy
-      : DEFAULT_UI_SETTINGS.memoResetPolicy;
-    const legacyStrength = ["subtle", "medium", "strong"].includes(parsed?.highlightStrength)
-      ? parsed.highlightStrength
-      : DEFAULT_UI_SETTINGS.pickerHighlight.strength;
-    const legacyColor =
-      typeof parsed?.highlightColor === "string" && parsed.highlightColor.trim()
-        ? parsed.highlightColor
-        : DEFAULT_UI_SETTINGS.pickerHighlight.color;
-    const pickerHighlightRaw =
-      parsed?.pickerHighlight && typeof parsed.pickerHighlight === "object"
-        ? parsed.pickerHighlight
-        : null;
-    const pickerHighlight = {
-      strength: ["subtle", "medium", "strong"].includes(pickerHighlightRaw?.strength)
-        ? pickerHighlightRaw.strength
-        : legacyStrength,
-      color:
-        typeof pickerHighlightRaw?.color === "string" && pickerHighlightRaw.color.trim()
-          ? pickerHighlightRaw.color
-          : legacyColor,
-    };
-    let exportAction = ["copy", "inject", "send"].includes(parsed?.exportAction)
-      ? parsed.exportAction
-      : DEFAULT_UI_SETTINGS.exportAction;
-    let autoImportResponse =
-      typeof parsed?.autoImportResponse === "boolean"
-        ? parsed.autoImportResponse
-        : DEFAULT_UI_SETTINGS.autoImportResponse;
-    const storedAutoImportVersion = Number(parsed?.autoImportResponseVersion || 0);
-    let patchFullSyncEvery = PATCH_FULL_SYNC_CADENCE_OPTIONS.includes(Number(parsed?.patchFullSyncEvery))
-      ? Number(parsed.patchFullSyncEvery)
-      : DEFAULT_UI_SETTINGS.patchFullSyncEvery;
-    let retryFullSyncOnReject =
-      typeof parsed?.retryFullSyncOnReject === "boolean"
-        ? parsed.retryFullSyncOnReject
-        : DEFAULT_UI_SETTINGS.retryFullSyncOnReject;
-    let aiResponseMode = ["full", "patch"].includes(parsed?.aiResponseMode)
-      ? parsed.aiResponseMode
-      : DEFAULT_UI_SETTINGS.aiResponseMode;
-    let adaptiveResponseRouting =
-      typeof parsed?.adaptiveResponseRouting === "boolean"
-        ? parsed.adaptiveResponseRouting
-        : DEFAULT_UI_SETTINGS.adaptiveResponseRouting;
-
-    if (shouldApplyCorePolicyProfile) {
-      memoResetPolicy = DEFAULT_UI_SETTINGS.memoResetPolicy;
-      exportAction = DEFAULT_UI_SETTINGS.exportAction;
-      autoImportResponse = DEFAULT_UI_SETTINGS.autoImportResponse;
-      patchFullSyncEvery = DEFAULT_UI_SETTINGS.patchFullSyncEvery;
-      retryFullSyncOnReject = DEFAULT_UI_SETTINGS.retryFullSyncOnReject;
-      adaptiveResponseRouting = DEFAULT_UI_SETTINGS.adaptiveResponseRouting;
-      aiResponseMode = DEFAULT_UI_SETTINGS.aiResponseMode;
-    }
-    if (storedAutoImportVersion < AUTO_IMPORT_DEFAULT_VERSION) {
-      autoImportResponse = DEFAULT_UI_SETTINGS.autoImportResponse;
-    }
-
-    return {
-      themeMode,
-      lockInteractionsWhenPaused:
-        typeof parsed?.lockInteractionsWhenPaused === "boolean"
-          ? parsed.lockInteractionsWhenPaused
-          : DEFAULT_UI_SETTINGS.lockInteractionsWhenPaused,
-      showTooltips:
-        typeof parsed?.showTooltips === "boolean"
-          ? parsed.showTooltips
-          : typeof parsed?.hideHintOverlay === "boolean"
-            ? !parsed.hideHintOverlay
-            : DEFAULT_UI_SETTINGS.showTooltips,
-      captureRange,
-      memoResetPolicy,
-      keepPickerActiveAfterSelect:
-        typeof parsed?.keepPickerActiveAfterSelect === "boolean"
-          ? parsed.keepPickerActiveAfterSelect
-          : DEFAULT_UI_SETTINGS.keepPickerActiveAfterSelect,
-      pickerAutoPause:
-        typeof parsed?.pickerAutoPause === "boolean"
-          ? parsed.pickerAutoPause
-          : DEFAULT_UI_SETTINGS.pickerAutoPause,
-      pickerHighlight,
-      exportAction,
-      autoImportResponse,
-      autoImportResponseVersion: AUTO_IMPORT_DEFAULT_VERSION,
-      patchFullSyncEvery,
-      retryFullSyncOnReject,
-      adaptiveResponseRouting,
-      aiResponseMode,
-      corePolicyProfileVersion: CORE_POLICY_PROFILE_VERSION,
-    };
-  } catch (err) {
-    return DEFAULT_UI_SETTINGS;
-  }
-}
-
-function resolveThemeModeTheme(themeMode, detectedTheme) {
-  if (themeMode === "light" || themeMode === "dark") return themeMode;
-  return detectedTheme === "dark" ? "dark" : "light";
-}
 
 function normalizeSource(url) {
   if (!url) return "";
@@ -169,197 +33,6 @@ function normalizeSource(url) {
   } catch (err) {
     return url;
   }
-}
-
-function buildCodeFingerprint(code) {
-  const source = String(code || "").replace(/\r\n?/g, "\n");
-  let hash = 2166136261;
-  for (let i = 0; i < source.length; i += 1) {
-    hash ^= source.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  const lineCount = source ? source.split("\n").length : 0;
-  const hashHex = (hash >>> 0).toString(16).padStart(8, "0");
-  return `${lineCount}L-${hashHex}`;
-}
-
-function evaluateEditComplexity(payload, instructionEntries) {
-  const entries = Array.isArray(instructionEntries) ? instructionEntries : [];
-  const lines = Array.from(
-    new Set(
-      entries
-        .map((entry) => Number(entry?.line))
-        .filter((line) => Number.isFinite(line) && line > 0)
-    )
-  ).sort((a, b) => a - b);
-
-  if (lines.length === 0) {
-    return { score: 0, shouldEscalateToFull: false, reasons: [] };
-  }
-
-  let score = 0;
-  const reasons = [];
-  const lineCount = lines.length;
-
-  if (lineCount >= 3) {
-    score += 3;
-    reasons.push("multi-target");
-  } else if (lineCount === 2) {
-    score += 1;
-    reasons.push("two-target");
-  }
-
-  const span = lines[lines.length - 1] - lines[0] + 1;
-  if (span >= 24) {
-    score += 2;
-    reasons.push("wide-span");
-  }
-
-  let clusters = 1;
-  for (let i = 1; i < lines.length; i += 1) {
-    if (lines[i] - lines[i - 1] > 8) clusters += 1;
-  }
-  if (clusters >= 2) {
-    score += 2;
-    reasons.push("multi-cluster");
-  }
-
-  const memoSize = entries.reduce((acc, entry) => acc + String(entry?.memoText || "").trim().length, 0);
-  if (memoSize >= 140) {
-    score += 1;
-    reasons.push("large-intent");
-  }
-
-  const language = String(payload?.language || "").toLowerCase();
-  if (language === "html") {
-    const codeLines = String(payload?.code || "").split("\n");
-    const structuralRe = /<\s*\/?\s*(html|head|body|style|script|header|nav|main|footer|section|article|aside|form|table|ul|ol|li)\b/i;
-    let structuralHits = 0;
-
-    lines.forEach((line) => {
-      const start = Math.max(1, line - 2);
-      const end = Math.min(codeLines.length, line + 2);
-      for (let i = start; i <= end; i += 1) {
-        if (structuralRe.test(codeLines[i - 1] || "")) {
-          structuralHits += 1;
-          break;
-        }
-      }
-    });
-
-    if (structuralHits >= 1) {
-      score += 2;
-      reasons.push("structural-zone");
-    }
-  }
-
-  return {
-    score,
-    shouldEscalateToFull: score >= 4,
-    reasons,
-  };
-}
-
-function buildExportPrompt({
-  payload,
-  instructionEntries,
-  settings,
-  forceFullSync = false,
-}) {
-  const safePayload = payload && typeof payload === "object" ? payload : null;
-  const safeEntries = Array.isArray(instructionEntries) ? instructionEntries : [];
-  const safeSettings = settings && typeof settings === "object" ? settings : DEFAULT_UI_SETTINGS;
-  const routingEnabled = safeSettings.adaptiveResponseRouting !== false;
-
-  if (!safePayload?.code) {
-    return {
-      prompt: "",
-      baseFingerprint: "",
-      promptLevel: 3,
-      forcedFullSync: false,
-      resolvedResponseMode: safeSettings.aiResponseMode || "patch",
-      autoEscalatedToFull: false,
-      escalationReasons: [],
-    };
-  }
-
-  let resolvedResponseMode =
-    safeSettings.aiResponseMode === "full" || safeSettings.aiResponseMode === "patch"
-      ? safeSettings.aiResponseMode
-      : "patch";
-  let autoEscalatedToFull = false;
-  let escalationReasons = [];
-  const forcedFullSync =
-    Boolean(forceFullSync) &&
-    resolvedResponseMode === "patch";
-  if (forcedFullSync) {
-    resolvedResponseMode = "full";
-    escalationReasons = ["forced-full-sync"];
-  }
-  if (resolvedResponseMode === "patch" && routingEnabled) {
-    const complexity = evaluateEditComplexity(safePayload, safeEntries);
-    if (complexity.shouldEscalateToFull) {
-      resolvedResponseMode = "full";
-      autoEscalatedToFull = true;
-      escalationReasons = complexity.reasons;
-    }
-  }
-
-  const codeLines = String(safePayload.code || "").split("\n");
-  const promptLevel = 3;
-  const isPatchMode = resolvedResponseMode === "patch";
-
-  let codeLabel = safePayload.language || "text";
-  let codeBody = safePayload.code;
-  if (isPatchMode) {
-    // Patch mode always uses full numbered source for deterministic line mapping.
-    codeLabel = `${codeLabel} (full-numbered)`;
-    codeBody = codeLines.map((line, index) => `${index + 1}|${line}`).join("\n");
-  } else {
-    codeLabel = `${codeLabel} (full)`;
-  }
-
-  const baseFingerprint = buildCodeFingerprint(safePayload.code);
-  let prompt = "";
-  prompt += `[SRC] ${safePayload.url || "Unknown"}\n`;
-  prompt += `[BASE] ${baseFingerprint}\n`;
-  prompt += "[RULE] Treat [CURRENT_SOURCE_OF_TRUTH] as the single source of truth for this turn. Ignore prior chat code context.\n";
-  prompt += `[CURRENT_SOURCE_OF_TRUTH ${codeLabel}]\n${codeBody}\n[/CURRENT_SOURCE_OF_TRUTH]\n`;
-  prompt += "[REQUEST]\n";
-  safeEntries.forEach((entry) => {
-    prompt += `L${entry.line}:${entry.memoText}\n`;
-  });
-  prompt += "[/REQUEST]\n";
-  if (isPatchMode) {
-    prompt += "[CONSTRAINT]\n";
-    prompt += "xml only; no markdown/text.\n";
-    prompt += "no analysis / no planning text.\n";
-    prompt += "output must start with <prism-patches.\n";
-    prompt += "line numbers must target [CURRENT_SOURCE_OF_TRUTH] above only.\n";
-    prompt += "line prefixes like '73|' are reference markers only; never include those prefixes in REPLACEMENT.\n";
-    prompt += `<prism-patches v="1" b="${baseFingerprint}">\n`;
-    prompt += '<prism-patch s="START" e="END">\n';
-    prompt += "REPLACEMENT\n";
-    prompt += "</prism-patch>\n";
-    prompt += "</prism-patches>\n";
-    prompt += "s/e = original line numbers (1-index, inclusive), multi patches allowed, sorted asc, non-overlap.\n";
-    prompt += 'no full code. no change => <prism-patches v="1"/>.\n';
-  } else {
-    prompt += "[CONSTRAINT]\n";
-    prompt += "return full updated code only.\n";
-    prompt += "no markdown fences, no analysis, no extra prose.\n";
-    prompt += "if no change is needed, return the original full code only.\n";
-  }
-
-  return {
-    prompt,
-    baseFingerprint,
-    promptLevel,
-    forcedFullSync,
-    resolvedResponseMode,
-    autoEscalatedToFull,
-    escalationReasons,
-  };
 }
 
 function detectKind(code) {
@@ -706,6 +379,7 @@ function App() {
   const lastExportSnapshotRef = useRef(null);
   const lastAutoRetryKeyRef = useRef("");
   const lastPatchRejectRef = useRef({ key: "", at: 0 });
+  const patchRejectStreakRef = useRef(0);
   const { toast, showToast } = useToast();
   const activeTheme = useMemo(
     () => resolveThemeModeTheme(uiSettings.themeMode, latestPayload?.theme),
@@ -1357,20 +1031,46 @@ function App() {
   }, [instructionCount, showToast]);
 
   const sendPromptToActiveTab = useCallback((prompt, action) => {
-    if (!prompt) return;
-    if (action !== "inject" && action !== "send") return;
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: "PRISM_INJECT_PROMPT",
-          text: prompt,
-          action,
-        });
+    return new Promise((resolve) => {
+      if (!prompt) {
+        resolve({ ok: false, reason: "empty_prompt" });
+        return;
       }
+      if (action !== "inject" && action !== "send") {
+        resolve({ ok: true, skipped: true });
+        return;
+      }
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTabId = tabs[0]?.id;
+        if (!activeTabId) {
+          resolve({ ok: false, reason: "no_active_tab" });
+          return;
+        }
+        chrome.tabs.sendMessage(
+          activeTabId,
+          {
+            type: "PRISM_INJECT_PROMPT",
+            text: prompt,
+            action,
+          },
+          (response) => {
+            const runtimeErr = chrome.runtime?.lastError;
+            if (runtimeErr) {
+              resolve({ ok: false, reason: runtimeErr.message || "send_message_failed" });
+              return;
+            }
+            if (response && response.ok === false) {
+              resolve({ ok: false, reason: response.reason || "inject_failed" });
+              return;
+            }
+            resolve({ ok: true });
+          }
+        );
+      });
     });
   }, []);
 
-  const handleExportPrompt = useCallback((options = {}) => {
+  const handleExportPrompt = useCallback(async (options = {}) => {
     const payload = options.payload || latestPayloadRef.current;
     const entries = Array.isArray(options.instructionEntries)
       ? options.instructionEntries.map((entry) => ({ ...entry }))
@@ -1383,6 +1083,7 @@ function App() {
     const skipClipboard = Boolean(options.skipClipboard);
     const keepMemos = Boolean(options.keepMemos);
     const manualForceFullSync = Boolean(options.forceFullSync);
+    const recoveryHint = typeof options.recoveryHint === "string" ? options.recoveryHint.trim() : "";
     const actionOverride = ["copy", "inject", "send"].includes(options.actionOverride)
       ? options.actionOverride
       : null;
@@ -1407,40 +1108,9 @@ function App() {
       instructionEntries: entries,
       settings: settingsSnapshot,
       forceFullSync,
+      recoveryHint,
     });
     if (!promptBundle.prompt) return false;
-
-    const applyPostExportState = () => {
-      if (!keepMemos && settingsSnapshot.memoResetPolicy === "on_copy") {
-        dispatchInteraction({ type: "CLEAR_INSTRUCTIONS" });
-        setPreviewInstructionLine(null);
-      }
-
-      sendPromptToActiveTab(promptBundle.prompt, action);
-
-      if (settingsSnapshot.aiResponseMode === "patch") {
-        patchExportTurnRef.current =
-          promptBundle.resolvedResponseMode === "patch"
-            ? promptBundle.forcedFullSync
-              ? 0
-              : patchExportTurnRef.current + 1
-            : 0;
-      } else {
-        patchExportTurnRef.current = 0;
-      }
-      pendingFullSyncRef.current = false;
-      lastAutoRetryKeyRef.current = "";
-      lastPatchRejectRef.current = { key: "", at: 0 };
-
-      lastExportSnapshotRef.current = {
-        createdAt: Date.now(),
-        payload: { ...payload },
-        instructionEntries: entries.map((entry) => ({ ...entry })),
-        settings: { ...settingsSnapshot, aiResponseMode: promptBundle.resolvedResponseMode },
-        baseFingerprint: promptBundle.baseFingerprint,
-        retryUsed: Boolean(options.isRetry),
-      };
-    };
 
     let defaultToast = skipClipboard
       ? promptBundle.forcedFullSync
@@ -1459,19 +1129,65 @@ function App() {
         ? options.toastMessage.trim()
         : defaultToast;
 
-    if (skipClipboard) {
-      applyPostExportState();
+    const applyPostExportState = async () => {
+      const dispatchResult = await sendPromptToActiveTab(promptBundle.prompt, action);
+      if (!dispatchResult?.ok) {
+        pendingFullSyncRef.current = true;
+        if (Boolean(options.isRetry)) {
+          lastAutoRetryKeyRef.current = "";
+          if (lastExportSnapshotRef.current) {
+            lastExportSnapshotRef.current.retryUsed = false;
+          }
+        }
+        const dispatchReason = dispatchResult?.reason ? ` (${dispatchResult.reason})` : "";
+        showToast(`프롬프트 전송 실패${dispatchReason}`);
+        return false;
+      }
+
+      if (!keepMemos && settingsSnapshot.memoResetPolicy === "on_copy") {
+        dispatchInteraction({ type: "CLEAR_INSTRUCTIONS" });
+        setPreviewInstructionLine(null);
+      }
+
+      if (settingsSnapshot.aiResponseMode === "patch") {
+        patchExportTurnRef.current =
+          promptBundle.resolvedResponseMode === "patch"
+            ? promptBundle.forcedFullSync
+              ? 0
+              : patchExportTurnRef.current + 1
+            : 0;
+      } else {
+        patchExportTurnRef.current = 0;
+      }
+      pendingFullSyncRef.current = false;
+      lastAutoRetryKeyRef.current = "";
+      lastPatchRejectRef.current = { key: "", at: 0 };
+      patchRejectStreakRef.current = 0;
+
+      lastExportSnapshotRef.current = {
+        createdAt: Date.now(),
+        payload: { ...payload },
+        instructionEntries: entries.map((entry) => ({ ...entry })),
+        settings: { ...settingsSnapshot, aiResponseMode: promptBundle.resolvedResponseMode },
+        baseFingerprint: promptBundle.baseFingerprint,
+        retryUsed: Boolean(options.isRetry),
+      };
       if (toastMessage) showToast(toastMessage);
       return true;
+    };
+
+    if (skipClipboard) {
+      return applyPostExportState();
     }
 
-    navigator.clipboard.writeText(promptBundle.prompt).then(() => {
-      applyPostExportState();
-      if (toastMessage) showToast(toastMessage);
-    }).catch(() => {
+    try {
+      await navigator.clipboard.writeText(promptBundle.prompt);
+    } catch (err) {
       showToast("클립보드 복사 실패");
-    });
-    return true;
+      return false;
+    }
+
+    return applyPostExportState();
   }, [instructionEntries, sendPromptToActiveTab, showToast, uiSettings]);
 
   useEffect(() => {
@@ -1483,6 +1199,7 @@ function App() {
       if (reason === "missing_base") return "기준 코드 없음";
       if (reason === "apply_failed") return "라인 적용 실패";
       if (reason === "risky_patch") return "구조 위험 패치";
+      if (reason === "broken_layout") return "레이아웃 붕괴 감지";
       if (reason === "unsupported_result") return "결과 타입 불일치";
       return "알 수 없음";
     };
@@ -1502,48 +1219,68 @@ function App() {
         return;
       }
       lastPatchRejectRef.current = { key: rejectKey, at: now };
-      pendingFullSyncRef.current = true;
+      patchRejectStreakRef.current += 1;
 
       const reasonText = describeReason(reason);
+      const rejectStreak = patchRejectStreakRef.current;
+      const hardFailReasons = new Set([
+        "invalid_patch",
+        "base_mismatch",
+        "missing_base",
+        "risky_patch",
+        "broken_layout",
+      ]);
+      const shouldEscalateToFull = hardFailReasons.has(reason) || rejectStreak >= 2;
       if (!uiSettings.retryFullSyncOnReject) {
-        showToast(`Smart Patch 거부됨 (${reasonText}) - 다음 전송은 Full Sync`);
+        pendingFullSyncRef.current = true;
+        showToast(`Smart Patch 거부됨 (${reasonText}) - 다음 전송은 Full Code`);
         return;
       }
 
       const snapshot = lastExportSnapshotRef.current;
       if (!snapshot || snapshot.retryUsed) {
+        pendingFullSyncRef.current = true;
         showToast(`Smart Patch 거부됨 (${reasonText})`);
         return;
       }
       if (now - Number(snapshot.createdAt || 0) > 10 * 60 * 1000) {
+        pendingFullSyncRef.current = true;
         showToast(`Smart Patch 거부됨 (${reasonText}) - 이전 컨텍스트 만료`);
         return;
       }
 
-      const retryKey = `${snapshot.baseFingerprint || ""}|${reason}`;
+      const retryKey = `${snapshot.baseFingerprint || ""}|${reason}|${shouldEscalateToFull ? "full" : "patch"}`;
       if (lastAutoRetryKeyRef.current === retryKey) {
+        pendingFullSyncRef.current = true;
         showToast(`Smart Patch 거부됨 (${reasonText})`);
         return;
       }
       lastAutoRetryKeyRef.current = retryKey;
       snapshot.retryUsed = true;
 
-      const retried = handleExportPrompt({
+      const recoveryHint = shouldEscalateToFull
+        ? `The previous patch failed (${reason}). Return full updated code only for recovery.`
+        : `The previous patch failed (${reason}). Retry in strict <prism-patches> format only.`;
+      handleExportPrompt({
         payload: snapshot.payload,
         instructionEntries: snapshot.instructionEntries,
         settings: snapshot.settings,
-        forceFullSync: true,
+        forceFullSync: shouldEscalateToFull,
+        recoveryHint,
         skipClipboard: true,
         keepMemos: true,
         actionOverride: "send",
         isRetry: true,
-        toastMessage: `Smart Patch 거부됨 (${reasonText}) -> Full Sync 재시도 전송`,
+        toastMessage: shouldEscalateToFull
+          ? `Smart Patch 거부됨 (${reasonText}) -> Full Code 재시도 전송`
+          : `Smart Patch 거부됨 (${reasonText}) -> Patch 재시도 전송`,
         silentWhenNoMemo: true,
+      }).then((retried) => {
+        if (!retried) {
+          pendingFullSyncRef.current = true;
+          showToast(`Smart Patch 거부됨 (${reasonText}) - 자동 재시도 실패`);
+        }
       });
-
-      if (!retried) {
-        showToast(`Smart Patch 거부됨 (${reasonText}) - Full Sync 재시도 실패`);
-      }
     };
 
     chrome.runtime.onMessage.addListener(handlePatchReject);
