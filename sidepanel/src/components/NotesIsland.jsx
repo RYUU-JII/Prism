@@ -6,9 +6,9 @@ const HOVER_CLOSE_DELAY_MS = 250;
 const NotesIsland = ({
   instructionEntries,
   instructionCount,
-  toastMessage,
   pickerActive,
   canvasFrozen,
+  pulseToken = 0,
   onInstructionHover,
   onInstructionSelect,
   onInstructionDelete,
@@ -18,12 +18,14 @@ const NotesIsland = ({
   const hasEntries = entries.length > 0;
   const [expanded, setExpanded] = useState(false);
   const [pinned, setPinned] = useState(false);
+  const [pulseActive, setPulseActive] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [hoveredLine, setHoveredLine] = useState(null);
   const [pointerInside, setPointerInside] = useState(false);
   const rootRef = useRef(null);
   const hoverOpenTimerRef = useRef(null);
   const hoverCloseTimerRef = useRef(null);
+  const pulseTimerRef = useRef(null);
 
   const clearHoverOpenTimer = () => {
     if (!hoverOpenTimerRef.current) return;
@@ -77,8 +79,25 @@ const NotesIsland = ({
     return () => {
       clearHoverOpenTimer();
       clearHoverCloseTimer();
+      if (pulseTimerRef.current) {
+        window.clearTimeout(pulseTimerRef.current);
+        pulseTimerRef.current = null;
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!pulseToken) return;
+    setPulseActive(true);
+    if (pulseTimerRef.current) {
+      window.clearTimeout(pulseTimerRef.current);
+      pulseTimerRef.current = null;
+    }
+    pulseTimerRef.current = window.setTimeout(() => {
+      setPulseActive(false);
+      pulseTimerRef.current = null;
+    }, 720);
+  }, [pulseToken]);
 
   useEffect(() => {
     if (expanded) return;
@@ -108,14 +127,12 @@ const NotesIsland = ({
     };
   }, [clearConfirmOpen, expanded, pinned, pointerInside]);
 
-  const idleMessage = useMemo(() => {
-    if (pickerActive) return "피커 모드 활성";
+  const islandLabel = useMemo(() => {
+    if (instructionCount > 0) return "메모 보관됨";
+    if (pickerActive) return "피커 선택 대기";
     if (canvasFrozen) return "일시정지 상태";
-    if (hasEntries) return "메모 상태 대기";
-    return "메모가 없습니다.";
-  }, [canvasFrozen, hasEntries, pickerActive]);
-
-  const barMessage = toastMessage && toastMessage.trim() ? toastMessage : idleMessage;
+    return "메모 없음";
+  }, [canvasFrozen, instructionCount, pickerActive]);
 
   const setPreviewLine = (line) => {
     const numericLine = Number(line);
@@ -168,7 +185,7 @@ const NotesIsland = ({
   return (
     <section
       ref={rootRef}
-      className={`notes-island ${expanded ? "is-expanded" : ""} ${pinned ? "is-pinned" : ""} ${toastMessage ? "has-toast" : ""}`}
+      className={`notes-island ${expanded ? "is-expanded" : ""} ${pinned ? "is-pinned" : ""} ${pulseActive ? "is-pulse" : ""}`}
       onMouseEnter={() => {
         setPointerInside(true);
         scheduleHoverOpen();
@@ -186,7 +203,7 @@ const NotesIsland = ({
         if (event.currentTarget.contains(event.relatedTarget)) return;
         scheduleHoverClose();
       }}
-      aria-label="Notes island"
+      aria-label={islandLabel}
     >
       <div
         className="notes-island__bar"
@@ -205,7 +222,6 @@ const NotesIsland = ({
             </svg>
           )}
         </span>
-        <span className="notes-island__message">{barMessage}</span>
         <span className="notes-island__count">{instructionCount}개</span>
         {pinned && (
           <button
