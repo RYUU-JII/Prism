@@ -10,6 +10,20 @@
   const STOP_HINT_RE = /(stop|중지|halt|cancel)/i;
   const NETWORK_PROBE_SCRIPT_ID = "prism-network-probe-main";
   const NETWORK_PROBE_SCRIPT_PATH = "content/bridges/network-probe-main.js";
+  const CODE_BLOCK_MIN_CHARS = 12;
+  const COPY_CONTROL_SELECTOR =
+    "button,[role='button'],[aria-label*='copy' i],[aria-label*='복사'],[data-testid*='copy' i],[class*='copy' i]";
+  const STOP_CONTROL_SELECTOR =
+    "button[aria-label*='stop' i], button[aria-label*='중지'], [data-testid*='stop' i], button[class*='stop' i]";
+  const ASSISTANT_CONTAINER_SELECTORS = [
+    "[data-message-author-role='assistant']",
+    "article",
+    ".markdown",
+    ".prose",
+    "[data-testid*='assistant']",
+    "[class*='assistant']",
+    "main",
+  ];
 
   function cssEscape(value) {
     if (window.CSS && typeof window.CSS.escape === "function") {
@@ -33,6 +47,57 @@
     const style = window.getComputedStyle(el);
     if (!style) return true;
     return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+  }
+
+  function collectSearchRoots(root = document) {
+    const roots = [];
+    const queue = [root];
+    const seen = new Set();
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current || seen.has(current)) continue;
+      seen.add(current);
+      roots.push(current);
+
+      let walker = null;
+      try {
+        walker = document.createTreeWalker(current, NodeFilter.SHOW_ELEMENT);
+      } catch (err) {
+        walker = null;
+      }
+      if (!walker) continue;
+
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (node && node.shadowRoot) queue.push(node.shadowRoot);
+      }
+    }
+
+    return roots;
+  }
+
+  function querySelectorAllDeep(selector, root = document, precomputedRoots = null) {
+    const results = [];
+    const seen = new Set();
+    const roots = Array.isArray(precomputedRoots) ? precomputedRoots : collectSearchRoots(root);
+
+    for (const searchRoot of roots) {
+      let nodeList = [];
+      try {
+        nodeList = searchRoot.querySelectorAll(selector);
+      } catch (err) {
+        nodeList = [];
+      }
+      nodeList.forEach((node) => {
+        if (!(node instanceof Element)) return;
+        if (seen.has(node)) return;
+        seen.add(node);
+        results.push(node);
+      });
+    }
+
+    return results;
   }
 
   function getInteractiveRoot(el) {
@@ -206,16 +271,11 @@
     bucket.updatedAt = now;
   }
 
-  function findByFingerprint(fp) {
+  function findByFingerprint(fp, precomputedRoots = null) {
     if (!fp) return null;
     const selectors = selectorsFromFingerprint(fp);
     for (const selector of selectors) {
-      let nodeList = [];
-      try {
-        nodeList = document.querySelectorAll(selector);
-      } catch (err) {
-        nodeList = [];
-      }
+      const nodeList = querySelectorAllDeep(selector, document, precomputedRoots);
       for (const node of nodeList) {
         if (!isVisible(node)) continue;
         return node;
@@ -224,7 +284,8 @@
     return null;
   }
 
-  function collectCandidates(type) {
+  function collectCandidates(type, precomputedRoots = null) {
+    const roots = Array.isArray(precomputedRoots) ? precomputedRoots : null;
     let selectors = [];
     if (type === "copyButtons") {
       selectors = [
@@ -233,6 +294,7 @@
         "[aria-label*='복사']",
         "button[data-testid*='copy' i]",
         "button[class*='copy' i]",
+        "[data-tooltip*='copy' i]",
       ];
     } else if (type === "sendButtons") {
       selectors = [
@@ -243,6 +305,7 @@
         "button[aria-label*='보내기']",
         "button[class*='submit' i]",
         "button[class*='send' i]",
+        "button[type='submit']",
       ];
     } else if (type === "inputs") {
       selectors = [
@@ -255,18 +318,14 @@
         "textarea[aria-label*='prompt' i]",
         "textarea",
         "div[contenteditable='true']",
+        "[contenteditable='true'][role='textbox']",
       ];
     }
 
     const merged = [];
     const seen = new Set();
     selectors.forEach((selector) => {
-      let nodeList = [];
-      try {
-        nodeList = document.querySelectorAll(selector);
-      } catch (err) {
-        nodeList = [];
-      }
+      const nodeList = querySelectorAllDeep(selector, document, roots);
       nodeList.forEach((node) => {
         if (!(node instanceof Element)) return;
         if (!isVisible(node)) return;
@@ -275,6 +334,17 @@
         merged.push(node);
       });
     });
+
+    if (type === "copyButtons") {
+      const preNodes = querySelectorAllDeep("pre", document, roots);
+      preNodes.forEach((preNode) => {
+        const nearby = findNearbyCopyButton(preNode);
+        if (!nearby || seen.has(nearby) || !isVisible(nearby)) return;
+        seen.add(nearby);
+        merged.push(nearby);
+      });
+    }
+
     return merged;
   }
 
@@ -300,6 +370,131 @@
     }
 
     return score;
+  }
+
+  function scoreCopyControlCandidate(el) {
+    if (!el || !(el instanceof Element)) return -Infinity;
+    let score = 0;
+    if (isVisible(el)) score += 8;
+    if (el.matches("button,[role='button']")) score += 6;
+    if (looksLikeCopyControl(el)) score += 20;
+    if (el.querySelector("svg")) score += 2;
+    return score;
+  }
+
+  function findNearbyCopyButton(preEl) {
+    if (!preEl || !(preEl instanceof Element)) return null;
+
+    const scopes = [
+      preEl,
+      preEl.parentElement,
+      preEl.parentElement?.parentElement,
+      preEl.parentElement?.parentElement?.parentElement,
+    ].filter(Boolean);
+
+    let best = null;
+    let bestScore = -Infinity;
+
+    scopes.forEach((scope) => {
+      let candidates = [];
+      try {
+        candidates = scope.querySelectorAll(COPY_CONTROL_SELECTOR);
+      } catch (err) {
+        candidates = [];
+      }
+
+      candidates.forEach((candidate) => {
+        if (!(candidate instanceof Element)) return;
+        const score = scoreCopyControlCandidate(candidate);
+        if (score > bestScore) {
+          best = candidate;
+          bestScore = score;
+        }
+      });
+    });
+
+    if (best) return best;
+
+    const siblingButtons = [preEl.previousElementSibling, preEl.nextElementSibling].filter(
+      (node) => node instanceof Element
+    );
+    for (const node of siblingButtons) {
+      if (!node.matches("button,[role='button']")) continue;
+      if (!isVisible(node)) continue;
+      return node;
+    }
+
+    return null;
+  }
+
+  function scoreCodeBlockCandidate(preEl, index = 0) {
+    if (!preEl || !(preEl instanceof Element) || !isVisible(preEl)) return -Infinity;
+    let score = 0;
+
+    if (lower(preEl.tagName) === "pre") score += 20;
+    const codeNode = preEl.querySelector("code");
+    if (codeNode) score += 18;
+
+    const rawText = String(codeNode?.innerText || preEl.innerText || preEl.textContent || "").trim();
+    if (rawText.length >= CODE_BLOCK_MIN_CHARS) score += 8;
+    if (/\n/.test(rawText)) score += 7;
+    if (/[{}[\]();<>]/.test(rawText)) score += 4;
+
+    const style = window.getComputedStyle(preEl);
+    const family = lower(style.fontFamily);
+    if (
+      family.includes("mono") ||
+      family.includes("consolas") ||
+      family.includes("courier") ||
+      family.includes("menlo") ||
+      family.includes("fira")
+    ) {
+      score += 12;
+    }
+    const overflowX = lower(style.overflowX);
+    if (overflowX.includes("auto") || overflowX.includes("scroll")) score += 6;
+
+    if (findNearbyCopyButton(preEl)) score += 20;
+    score += Math.min(5, index / 50);
+
+    return score;
+  }
+
+  function extractCodeBlockTextCandidate() {
+    const pres = querySelectorAllDeep("pre");
+    if (pres.length === 0) return "";
+
+    let bestText = "";
+    let bestScore = -Infinity;
+    for (let i = 0; i < pres.length; i += 1) {
+      const pre = pres[i];
+      const codeNode = pre.querySelector("code");
+      const text = String(codeNode?.innerText || pre.innerText || pre.textContent || "").trim();
+      if (!text || text.length < CODE_BLOCK_MIN_CHARS) continue;
+      const score = scoreCodeBlockCandidate(pre, i);
+      if (score > bestScore) {
+        bestScore = score;
+        bestText = text;
+      }
+    }
+
+    return bestText;
+  }
+
+  function collectAssistantContainers() {
+    const roots = collectSearchRoots(document);
+    const merged = [];
+    const seen = new Set();
+    ASSISTANT_CONTAINER_SELECTORS.forEach((selector) => {
+      const nodes = querySelectorAllDeep(selector, document, roots);
+      nodes.forEach((node) => {
+        if (!(node instanceof Element)) return;
+        if (seen.has(node)) return;
+        seen.add(node);
+        merged.push(node);
+      });
+    });
+    return merged;
   }
 
   function installNetworkProbe() {
@@ -402,10 +597,11 @@
       const candidates = [];
       const seen = new Set();
       const learned = Array.isArray(bucket[type]) ? bucket[type] : [];
+      const searchRoots = collectSearchRoots(document);
 
       learned.forEach((entry) => {
         if (!entry || !entry.fp) return;
-        const element = findByFingerprint(entry.fp);
+        const element = findByFingerprint(entry.fp, searchRoots);
         if (!element || seen.has(element)) return;
         seen.add(element);
         candidates.push({
@@ -414,7 +610,7 @@
         });
       });
 
-      collectCandidates(type).forEach((element) => {
+      collectCandidates(type, searchRoots).forEach((element) => {
         if (seen.has(element)) return;
         seen.add(element);
         candidates.push({ element, score: scoreCandidate(type, element) });
@@ -425,9 +621,7 @@
     }
 
     function hasStopControl() {
-      const candidates = document.querySelectorAll(
-        "button[aria-label*='stop' i], button[aria-label*='중지'], [data-testid*='stop' i], button[class*='stop' i]"
-      );
+      const candidates = querySelectorAllDeep(STOP_CONTROL_SELECTOR);
       for (const candidate of candidates) {
         if (!isVisible(candidate)) continue;
         if (!looksLikeStopControl(candidate) && !STOP_HINT_RE.test(getElementHintText(candidate))) continue;
@@ -489,57 +683,44 @@
     }
 
     function extractPatchCandidateText() {
-      const containers = [
-        "[data-message-author-role='assistant']",
-        "article",
-        ".markdown",
-        ".prose",
-        "[data-testid*='assistant']",
-        "[class*='assistant']",
-        "main",
-      ];
-      for (const selector of containers) {
-        const nodes = document.querySelectorAll(selector);
-        for (let i = nodes.length - 1; i >= 0; i -= 1) {
-          const node = nodes[i];
-          const patchNode = node?.querySelector?.("prism-patches");
-          if (patchNode?.outerHTML) {
-            return patchNode.outerHTML;
-          }
+      const patchPattern = /<\s*prism-patch\b|<\s*prism-patches\b|&lt;\s*prism-patch\b|&lt;\s*prism-patches\b/i;
+      const nodes = collectAssistantContainers();
+      for (let i = nodes.length - 1; i >= 0; i -= 1) {
+        const node = nodes[i];
+        const patchNode = node?.querySelector?.("prism-patches");
+        if (patchNode?.outerHTML) return patchNode.outerHTML;
 
-          const html = node?.innerHTML || "";
-          if (html && (/<\s*prism-patch\b/i.test(html) || /&lt;\s*prism-patch\b/i.test(html))) {
-            return html;
-          }
+        const html = node?.innerHTML || "";
+        if (html && patchPattern.test(html)) return html;
 
-          const text = nodes[i]?.innerText || "";
-          if (!text) continue;
-          if (/<\s*prism-patch\b/i.test(text) || /&lt;\s*prism-patch\b/i.test(text)) {
-            return text;
-          }
-        }
+        const text = node?.innerText || "";
+        if (text && patchPattern.test(text)) return text;
       }
+
+      const preNodes = querySelectorAllDeep("pre");
+      for (let i = preNodes.length - 1; i >= 0; i -= 1) {
+        const text = String(preNodes[i]?.innerText || preNodes[i]?.textContent || "");
+        if (!text) continue;
+        if (patchPattern.test(text)) return text;
+      }
+
+      const bodyText = String(document.body?.innerText || "");
+      if (patchPattern.test(bodyText)) {
+        return bodyText.slice(Math.max(0, bodyText.length - 24000));
+      }
+
       return "";
     }
 
     function extractAssistantTextCandidate() {
-      const containers = [
-        "[data-message-author-role='assistant']",
-        "article",
-        ".markdown",
-        ".prose",
-        "[data-testid*='assistant']",
-        "[class*='assistant']",
-        "main",
-      ];
-      for (const selector of containers) {
-        const nodes = document.querySelectorAll(selector);
-        for (let i = nodes.length - 1; i >= 0; i -= 1) {
-          const text = nodes[i]?.innerText || "";
-          if (!text || text.trim().length < 8) continue;
-          return text;
-        }
+      const nodes = collectAssistantContainers();
+      for (let i = nodes.length - 1; i >= 0; i -= 1) {
+        const text = nodes[i]?.innerText || "";
+        if (!text || text.trim().length < 8) continue;
+        return text;
       }
+      const codeBlockText = extractCodeBlockTextCandidate();
+      if (codeBlockText) return codeBlockText;
       return "";
     }
 
@@ -557,6 +738,7 @@
       considerCompletion,
       extractPatchCandidateText,
       extractAssistantTextCandidate,
+      extractCodeBlockTextCandidate,
       getState: () => ({
         host,
         inFlightRequests,

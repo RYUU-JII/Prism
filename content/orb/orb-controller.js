@@ -750,6 +750,13 @@ function extractLastCodeAndRender() {
   }
 
   // 2. 폴백: 버튼을 못 찾으면 직접 텍스트 추출
+  const semanticCodeBlock = intelligentExtractor?.extractCodeBlockTextCandidate?.();
+  if (semanticCodeBlock && semanticCodeBlock !== lastCode) {
+    console.log("[Prism] Auto-import Fallback: Extracting semantic <pre> code block.");
+    handleCodeCopy(semanticCodeBlock);
+    return true;
+  }
+
   const codeBlocks = document.querySelectorAll("code[data-test-id='code-content'], pre code, pre > span");
   if (codeBlocks.length > 0) {
     const lastBlock = codeBlocks[codeBlocks.length - 1];

@@ -165,18 +165,22 @@ function buildExportPrompt({
   }
   if (isPatchMode) {
     prompt += "[CONSTRAINT]\n";
-    prompt += "xml only; no markdown/text.\n";
     prompt += "no analysis / no planning text.\n";
-    prompt += "output must start with <prism-patches.\n";
+    prompt += "output MUST be a single markdown code block with xml language tag.\n";
+    prompt += "no text before or after the code block.\n";
+    prompt += "inside the code block, the first tag must be <prism-patches>.\n";
     prompt += "line numbers must target [CURRENT_SOURCE_OF_TRUTH] above only.\n";
     prompt += "line prefixes like '73|' are reference markers only; never include those prefixes in REPLACEMENT.\n";
+    prompt += "Format example:\n";
+    prompt += "```xml\n";
     prompt += `<prism-patches v="1" b="${baseFingerprint}">\n`;
     prompt += '<prism-patch s="START" e="END">\n';
     prompt += "REPLACEMENT\n";
     prompt += "</prism-patch>\n";
     prompt += "</prism-patches>\n";
+    prompt += "```\n";
     prompt += "s/e = original line numbers (1-index, inclusive), multi patches allowed, sorted asc, non-overlap.\n";
-    prompt += 'no full code. no change => <prism-patches v="1"/>.\n';
+    prompt += 'no full code. no change => ```xml\\n<prism-patches v="1"/>\\n```.\n';
   } else {
     prompt += "[CONSTRAINT]\n";
     prompt += "return full updated code only.\n";
