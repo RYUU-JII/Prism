@@ -9,7 +9,7 @@
   const SEND_HINT_RE = /(send|submit|전송|보내기|ask|run|generate|continue)/i;
   const STOP_HINT_RE = /(stop|중지|halt|cancel)/i;
   const NETWORK_PROBE_SCRIPT_ID = "prism-network-probe-main";
-  const NETWORK_PROBE_SCRIPT_PATH = "content/network-probe-main.js";
+  const NETWORK_PROBE_SCRIPT_PATH = "content/bridges/network-probe-main.js";
 
   function cssEscape(value) {
     if (window.CSS && typeof window.CSS.escape === "function") {

@@ -9,7 +9,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content/clipboard-bridge.js"],
+      "js": ["content/bridges/clipboard-bridge.js"],
       "all_frames": true,
       "run_at": "document_start",
       "world": "MAIN"
@@ -17,19 +17,19 @@
     {
       "matches": ["<all_urls>"],
       "js": [
-        "content/intelligent-extractor.js",
-        "content/prism-patch-utils.js",
-        "content/prism-chat-injector.js",
-        "content/prism-orb-ui.js",
-        "content/prism-orb.js"
+        "content/extractor/intelligent-extractor.js",
+        "content/orb/patch-utils.js",
+        "content/orb/chat-injector.js",
+        "content/orb/orb-ui.js",
+        "content/orb/orb-controller.js"
       ],
-      "css": ["content/prism-orb.css"],
+      "css": ["content/orb/orb.css"],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["content/network-probe-main.js"],
+      "resources": ["content/bridges/network-probe-main.js"],
       "matches": ["<all_urls>"]
     }
   ],
