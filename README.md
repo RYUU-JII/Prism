@@ -7,7 +7,7 @@ Prism은 복사한 코드를 Chrome Side Panel에서 즉시 렌더링하고, 요
 ## 핵심 기능
 
 - 복사 기반 워크플로: 코드 복사 시 자동 감지, 패널 열림 상태면 즉시 갱신
-- 샌드박스 렌더러: `sidepanel/sandbox.html` + `sandbox/runtime.js` 기반 격리 렌더
+- 샌드박스 렌더러: `sidepanel/sandbox.html` + `sidepanel/sandbox/core/runtime.js` 기반 격리 렌더
 - 요소 피커 + 메모: `data-prism-line` 기준으로 라인 매핑, 메모 저장/수정/삭제
 - Notes Island: 메모 목록, hover 미리보기, 클릭 이동(자동 스크롤), 전체/개별 삭제
 - Copy Prompt: 메모 + 현재 전체 코드를 `[CURRENT_SOURCE_OF_TRUTH]`로 묶어 내보내기
@@ -74,31 +74,54 @@ Prism/
 ├─ manifest.json
 ├─ background.js
 ├─ content/
-│  ├─ clipboard-bridge.js
-│  ├─ prism-orb.js
-│  └─ prism-orb.css
+│  ├─ bridges/
+│  │  ├─ clipboard-bridge.js
+│  │  └─ network-probe-main.js
+│  ├─ extractor/
+│  │  └─ intelligent-extractor.js
+│  ├─ orb/
+│  │  ├─ orb-controller.js
+│  │  ├─ orb-ui.js
+│  │  ├─ chat-injector.js
+│  │  ├─ patch-utils.js
+│  │  └─ orb.css
+│  └─ legacy/
 ├─ sidepanel/
 │  ├─ dist/
 │  ├─ src/
-│  │  ├─ App.jsx
-│  │  ├─ components/
-│  │  ├─ hooks/
+│  │  ├─ app/PrismApp.jsx
+│  │  ├─ core/
+│  │  ├─ features/workspace/components/
+│  │  ├─ shared/
 │  │  ├─ styles/
-│  │  └─ utils/capture.js
+│  │  └─ main.jsx
 │  ├─ sandbox/
-│  │  ├─ runtime.js
-│  │  ├─ constants.js
-│  │  ├─ helpers.js
+│  │  ├─ core/
+│  │  │  ├─ runtime.js
+│  │  │  ├─ constants.js
+│  │  │  └─ helpers.js
 │  │  └─ renderers/
+│  │     ├─ reactRenderer.js
+│  │     ├─ vueRenderer.js
+│  │     └─ html/
+│  │        ├─ htmlRenderer.js
+│  │        └─ htmlBridgeAssets.js
 │  ├─ sandbox.html
 │  └─ vendor/
 └─ icons/
 ```
 
+## 구조 원칙
+
+- 실행 경로와 보조 모듈을 분리합니다. (`content/orb`, `content/extractor`, `content/bridges`)
+- UI는 `app`/`features`/`shared`/`core`로 분리해 의존 방향을 단순화합니다.
+- sandbox는 `core(runtime)`와 `renderers(framework)`를 분리해 렌더 경로를 명확히 합니다.
+- 사용하지 않는 과거 파일은 `legacy`로 격리해 현재 실행 코드와 혼동을 줄입니다.
+
 ## 문서
 
-- 아키텍처 상세: [`아키텍쳐.md`](./아키텍쳐.md)
-- 영문 포인터: [`PRISM_ARCHITECTURE.md`](./PRISM_ARCHITECTURE.md)
+- 아키텍처 상세: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+- 기여 가이드: [`CONTRIBUTING.md`](./CONTRIBUTING.md)
 
 ## 유의사항
 
