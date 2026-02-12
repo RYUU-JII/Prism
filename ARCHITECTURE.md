@@ -7,7 +7,7 @@
 Prism은 5개 런타임 레이어로 동작합니다.
 
 1. `content/*`  
-복사 이벤트 감지, Orb UI, 패널 열기 트리거를 담당합니다.
+복사 이벤트 감지, Orb UI, 지능형 추출(버튼 학습/완료 신호 결합), 패널 열기 트리거를 담당합니다.
 
 2. `background.js` (Service Worker)  
 탭별 최신 payload 저장, Side Panel 상태 브로드캐스트, 메시지 허브 역할을 담당합니다.
@@ -59,7 +59,12 @@ picker 선택 시 `PRISM_PICKER_SELECT`가 App으로 올라오고, `FloatingInpu
 - `captureRange: "visible" | "full"`
 - `memoResetPolicy: "on_code_change" | "on_copy" | "manual"`
 - `keepPickerActiveAfterSelect: boolean`
-- `exportPromptLevel: 1 | 2 | 3`
+- `aiResponseMode: "full" | "patch"`
+- `adaptiveResponseRouting: boolean`
+- `autoImportResponse: boolean`
+- `patchFullSyncEvery: 0 | 2 | 3 | 5 | 8`
+- `retryFullSyncOnReject: boolean`
+- `exportAction: "copy" | "inject" | "send"`
 - `pickerAutoPause: boolean`
 - `pickerHighlight: { strength: "subtle" | "medium" | "strong", color: string }`
 
@@ -105,6 +110,9 @@ picker 선택 시 `PRISM_PICKER_SELECT`가 App으로 올라오고, `FloatingInpu
 ### `content/prism-orb.js`
 
 - 코드 타입 감지(`detectKind`) 후 텍스트가 아니면 렌더를 요청합니다.
+- Smart Patch 모드에서는 `<prism-patches>` / `<prism-patch start_line end_line>` 응답을 파싱해 기존 코드에 라인 단위로 적용합니다.
+- 패치 범위 검증(라인 범위/겹침) 후 적용하며, base code가 없으면 `PRISM_GET_LATEST`로 복원 시도합니다.
+- `content/intelligent-extractor.js` 모듈과 연결되어, copy/send/input 후보를 host별로 학습하고 자동 가져오기 완료 감지를 보강합니다.
 - 패널 닫힘 상태에서 Orb 노출, 열림 상태에서는 피드백 애니메이션만 노출합니다.
 - 패널 상태(`PRISM_PANEL_STATUS`)를 수신해 Orb 표시 정책을 동기화합니다.
 
@@ -112,6 +120,8 @@ picker 선택 시 `PRISM_PICKER_SELECT`가 App으로 올라오고, `FloatingInpu
 
 - payload 렌더, 상태 리듀서, 설정 관리, toast, 캡처 트리거를 중앙에서 제어합니다.
 - 메모 정책(`memoResetPolicy`)을 코드 변경/복사 시점에 적용합니다.
+- 프롬프트 생성 시 현재 전체 코드를 매번 `[CURRENT_SOURCE_OF_TRUTH]`로 포함해 컨텍스트 드리프트를 줄입니다.
+- Smart Patch 실패/복합 수정/주기 조건에서 Full Code 요청으로 자동 전환하는 하이브리드 동기화를 관리합니다.
 - Notes hover/select/delete/clear와 sandbox 메시지 브리지를 관리합니다.
 
 ### `sidepanel/src/components/NotesIsland.jsx`
