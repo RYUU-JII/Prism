@@ -4,9 +4,9 @@ import {
   sources
 } from "./constants.js";
 import { escapeHtml, pickStyles } from "./helpers.js";
-import { createReactRenderer } from "./renderers/react.js";
-import { createVueRenderer } from "./renderers/vue.js";
-import { createHtmlRenderer } from "./renderers/html.js";
+import { createReactRenderer } from "../renderers/reactRenderer.js";
+import { createVueRenderer } from "../renderers/vueRenderer.js";
+import { createHtmlRenderer } from "../renderers/html/htmlRenderer.js";
 
 /* --- [2. JavaScript runtime bootstrap] --- */
 document.documentElement.lang = navigator.language || "en";

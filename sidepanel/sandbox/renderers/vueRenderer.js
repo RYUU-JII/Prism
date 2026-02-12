@@ -5,7 +5,7 @@ import {
   parseVueSfc,
   stripImports,
   stripTypeScriptSyntax
-} from "../helpers.js";
+} from "../core/helpers.js";
 
 export function createVueRenderer(context) {
   const {

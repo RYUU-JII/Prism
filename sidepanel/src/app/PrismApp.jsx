@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useReducer } from 'react';
-import Header from './components/Header.jsx';
-import Viewer from './components/Viewer.jsx';
-import CommandBar from './components/CommandBar.jsx';
-import NotesIsland from './components/NotesIsland.jsx';
-import ExpertEditor from './components/ExpertEditor.jsx';
-import { performCaptureInParent } from './utils/capture';
-import { useToast } from './hooks/useToast.jsx';
-import { buildExportPrompt } from './core/prompt/exportPrompt.js';
+import Header from '../features/workspace/components/Header.jsx';
+import Viewer from '../features/workspace/components/Viewer.jsx';
+import CommandBar from '../features/workspace/components/CommandBar.jsx';
+import NotesIsland from '../features/workspace/components/NotesIsland.jsx';
+import ExpertEditor from '../features/workspace/components/ExpertEditor.jsx';
+import { performCaptureInParent } from '../shared/utils/capture.js';
+import { useToast } from '../shared/hooks/useToast.jsx';
+import { buildExportPrompt } from '../core/prompt/promptComposer.js';
 import {
   PATCH_FULL_SYNC_CADENCE_OPTIONS,
   UI_SETTINGS_KEY,
@@ -14,7 +14,7 @@ import {
   DEFAULT_UI_SETTINGS,
   loadUiSettings,
   resolveThemeModeTheme,
-} from './core/settings/uiSettings.js';
+} from '../core/settings/uiSettings.js';
 
 const ENABLE_EXPERT_MODE = false;
 const ENABLE_PICKER = true;
@@ -339,7 +339,7 @@ function interactionReducer(state, action) {
   }
 }
 
-function App() {
+function PrismApp() {
   const [latestPayload, setLatestPayload] = useState(null);
   const [expertMode, setExpertMode] = useState(false);
   const [isViewMode, setIsViewMode] = useState(false);
@@ -1483,4 +1483,4 @@ function App() {
   );
 }
 
-export default App;
+export default PrismApp;

@@ -1,11 +1,11 @@
-﻿import { PRISM_DEFAULT_IMPORTS } from "../constants.js";
+﻿import { PRISM_DEFAULT_IMPORTS } from "../../core/constants.js";
 import {
   buildAutoImportMap,
   buildHtmlSrcdoc,
   rewriteKnownCdnScriptUrls,
   stringifyImportMap
-} from "../helpers.js";
-import { buildHtmlBridgeAssets } from "./html-bridge-assets.js";
+} from "../../core/helpers.js";
+import { buildHtmlBridgeAssets } from "./htmlBridgeAssets.js";
 
 export function createHtmlRenderer(context) {
   const {
@@ -64,4 +64,5 @@ async function renderHtml(code, theme) {
     renderHtml
   };
 }
+
 

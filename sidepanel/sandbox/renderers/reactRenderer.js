@@ -1,11 +1,11 @@
-import { MAX_BABEL_CHARS } from "../constants.js";
+import { MAX_BABEL_CHARS } from "../core/constants.js";
 import {
   hasModuleSyntax,
   normalizeExports,
   rewriteBareModuleSpecifiersInJs,
   stripImports,
   transformReactSourceWithFallback
-} from "../helpers.js";
+} from "../core/helpers.js";
 
 function extractDestructuredPropNames(code) {
   const source = String(code || "");
