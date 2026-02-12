@@ -16,7 +16,13 @@
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["content/intelligent-extractor.js", "content/prism-orb.js"],
+      "js": [
+        "content/intelligent-extractor.js",
+        "content/prism-patch-utils.js",
+        "content/prism-chat-injector.js",
+        "content/prism-orb-ui.js",
+        "content/prism-orb.js"
+      ],
       "css": ["content/prism-orb.css"],
       "run_at": "document_idle"
     }

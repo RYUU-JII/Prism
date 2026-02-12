@@ -7,14 +7,13 @@ const AUTO_IMPORT_SETTLE_MS = 700;
 const PATCH_IMPORT_POLL_MS = 900;
 const PATCH_CANDIDATE_STABLE_MS = 1400;
 const ASSISTANT_TEXT_LIMIT = 24000;
+const patchUtils = window.PrismPatchUtils || {};
 
 let lastCode = "";
 let lastLanguage = "text";
 let lastRenderableCode = "";
 let lastRenderableLanguage = "text";
 let lastImportSuccessAt = 0;
-let hideTimer = null;
-let cleanupTimer = null; // 피드백 종료 타이머 추적용
 let lastCopyTime = 0; // 중복 복사 방지용 타임스탬프
 const GESTURE_WINDOW_MS = 4000;
 let lastUserGestureAt = 0;
@@ -39,90 +38,25 @@ const intelligentExtractor =
   window.PrismIntelligentExtractor && typeof window.PrismIntelligentExtractor.create === "function"
     ? window.PrismIntelligentExtractor.create({ host: window.location.host })
     : null;
-
-function isElementVisible(el) {
-  if (!el || !(el instanceof Element)) return false;
-  const rect = el.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return false;
-  const style = window.getComputedStyle(el);
-  if (!style) return true;
-  return style.display !== "none" && style.visibility !== "hidden";
-}
+const chatInjector =
+  window.PrismChatInjector && typeof window.PrismChatInjector.create === "function"
+    ? window.PrismChatInjector.create({ intelligentExtractor })
+    : null;
 
 function findBestInputCandidate() {
-  const learned = intelligentExtractor?.findBestInput?.();
-  if (learned) return learned;
-
-  const host = window.location.host;
-  if (host.includes("chatgpt.com")) {
-    return document.querySelector("#prompt-textarea");
-  }
-  if (host.includes("claude.ai")) {
-    return (
-      document.querySelector(".ProseMirror") ||
-      document.querySelector('[contenteditable="true"]')
-    );
-  }
-  if (host.includes("gemini.google.com")) {
-    return (
-      document.querySelector(".ql-editor") ||
-      document.querySelector('div[contenteditable="true"]')
-    );
-  }
-  if (host.includes("v0.dev")) {
-    return document.querySelector('textarea[placeholder*="Ask"]');
-  }
-  return (
-    document.querySelector('textarea[name*="prompt"]') ||
-    document.querySelector('textarea[placeholder*="prompt"]') ||
-    document.querySelector('textarea[aria-label*="prompt"]') ||
-    document.querySelector("textarea") ||
-    document.querySelector('div[contenteditable="true"]')
-  );
+  return chatInjector?.findBestInputCandidate?.() || null;
 }
 
 function findBestSendButtonCandidate() {
-  const learned = intelligentExtractor?.findBestSendButton?.();
-  if (learned) return learned;
-
-  const host = window.location.host;
-  if (host.includes("gemini.google.com")) {
-    return document.querySelector(".send-button");
-  }
-  if (host.includes("claude.ai")) {
-    return document.querySelector('button[aria-label*="Send"], button[aria-label*="전송"]');
-  }
-  if (host.includes("chatgpt.com")) {
-    return document.querySelector('button[data-testid*="send-button"]');
-  }
-  return (
-    document.querySelector(".send-button") ||
-    document.querySelector('button[aria-label*="전송"]') ||
-    document.querySelector('button[aria-label*="보내기"]') ||
-    document.querySelector('button[data-testid*="send"]') ||
-    document.querySelector('button[class*="submit"]')
-  );
+  return chatInjector?.findBestSendButtonCandidate?.() || null;
 }
 
 function findBestCopyButtonCandidate() {
-  const learned = intelligentExtractor?.findBestCopyButton?.();
-  if (learned) return learned;
-
-  const copyButtons = document.querySelectorAll(".copy-button, [aria-label*='복사'], [aria-label*='copy']");
-  for (let i = copyButtons.length - 1; i >= 0; i -= 1) {
-    const candidate = copyButtons[i];
-    if (!isElementVisible(candidate)) continue;
-    return candidate;
-  }
-  return null;
+  return chatInjector?.findBestCopyButtonCandidate?.() || null;
 }
 
 function hasStopGenerationControl() {
-  if (intelligentExtractor?.hasStopControl?.()) return true;
-  const stopNode = document.querySelector(
-    "button[aria-label*='stop' i], button[aria-label*='중지'], [data-testid*='stop' i], button[class*='stop' i]"
-  );
-  return Boolean(stopNode && isElementVisible(stopNode));
+  return chatInjector?.hasStopGenerationControl?.() || false;
 }
 
 function clearAutoImportTimers() {
@@ -230,18 +164,6 @@ function detectKind(code) {
 
 function normalizeClipboard(text) { return (text || "").trim(); }
 
-function buildCodeFingerprint(code) {
-  const source = String(code || "").replace(/\r\n?/g, "\n");
-  let hash = 2166136261;
-  for (let i = 0; i < source.length; i += 1) {
-    hash ^= source.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  const lineCount = source ? source.split("\n").length : 0;
-  const hashHex = (hash >>> 0).toString(16).padStart(8, "0");
-  return `${lineCount}L-${hashHex}`;
-}
-
 function detectTheme() {
   try {
     const html = document.documentElement;
@@ -277,148 +199,44 @@ function detectTheme() {
   return "light";
 }
 
-function decodeBasicEntities(text) {
-  if (!text || typeof text !== "string") return "";
-  return text
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&apos;/gi, "'")
-    .replace(/&amp;/gi, "&");
-}
-
-function stripSingleCodeFence(text) {
-  const trimmed = String(text || "").trim();
-  if (!trimmed) return "";
-  const fenced = trimmed.match(/^```[^\n]*\n?([\s\S]*?)\n?```$/);
-  return fenced ? fenced[1] : trimmed;
-}
-
-function extractPatchEnvelope(text) {
-  const normalized = decodeBasicEntities(stripSingleCodeFence(text));
-  if (!normalized) return "";
-
-  const wrapperRegex = /<prism-patches\b[^>]*>[\s\S]*?<\/prism-patches>/gi;
-  let wrapperMatch = null;
-  let found = null;
-  while ((wrapperMatch = wrapperRegex.exec(normalized)) !== null) {
-    found = wrapperMatch[0];
-  }
-  return found || normalized;
-}
-
-function parsePrismPatches(rawText) {
-  const envelope = extractPatchEnvelope(rawText);
-  if (!envelope) return { kind: "none", patches: [], baseFingerprint: "" };
-
-  const hasWrapper = /<prism-patches\b[^>]*>/i.test(envelope);
-  const wrapperMatch = envelope.match(/<prism-patches\b([^>]*)>/i);
-  const wrapperAttrText = wrapperMatch ? wrapperMatch[1] || "" : "";
-  const baseMatch = wrapperAttrText.match(/\b(?:base|b)\s*=\s*["']?([a-zA-Z0-9_.:-]+)["']?/i);
-  const baseFingerprint = baseMatch ? baseMatch[1] : "";
-  const patchRegex = /<prism-patch\b([^>]*)>([\s\S]*?)<\/prism-patch>/gi;
-  const patches = [];
-  let match = null;
-
-  while ((match = patchRegex.exec(envelope)) !== null) {
-    const attrText = match[1] || "";
-    const startMatch = attrText.match(/\b(?:start_line|s)\s*=\s*["']?(\d+)["']?/i);
-    const endMatch = attrText.match(/\b(?:end_line|e)\s*=\s*["']?(\d+)["']?/i);
-    if (!startMatch || !endMatch) continue;
-
-    const startLine = Number(startMatch[1]);
-    const endLine = Number(endMatch[1]);
-    if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) continue;
-    if (startLine <= 0 || endLine <= 0) continue;
-    if (endLine < startLine) continue;
-
-    let replacement = (match[2] || "").replace(/\r\n?/g, "\n");
-    if (replacement.startsWith("\n")) replacement = replacement.slice(1);
-    if (replacement.endsWith("\n")) replacement = replacement.slice(0, -1);
-
-    patches.push({
-      startLine,
-      endLine,
-      replacement,
-      index: patches.length,
-    });
-  }
-
-  if (hasWrapper && patches.length === 0) {
-    return { kind: "no_change", patches: [], baseFingerprint };
-  }
-  if (patches.length === 0) {
-    return { kind: "invalid", patches: [], baseFingerprint };
-  }
-
-  return { kind: "patches", patches, baseFingerprint };
-}
-
-function applyPrismPatches(baseCode, patches) {
-  const baseLines = String(baseCode || "").replace(/\r\n?/g, "\n").split("\n");
-  const totalLines = baseLines.length;
-  const orderedAsc = patches.slice().sort((a, b) => a.startLine - b.startLine || a.index - b.index);
-
-  for (let i = 0; i < orderedAsc.length; i += 1) {
-    const patch = orderedAsc[i];
-    if (patch.startLine > totalLines || patch.endLine > totalLines) {
-      return {
-        ok: false,
-        reason: `Line range out of bounds: ${patch.startLine}-${patch.endLine} (max ${totalLines})`,
-      };
-    }
-    if (i > 0) {
-      const prev = orderedAsc[i - 1];
-      if (patch.startLine <= prev.endLine) {
-        return {
-          ok: false,
-          reason: `Overlapping ranges: ${prev.startLine}-${prev.endLine} and ${patch.startLine}-${patch.endLine}`,
-        };
+const buildCodeFingerprint =
+  typeof patchUtils.buildCodeFingerprint === "function"
+    ? patchUtils.buildCodeFingerprint
+    : (code) => {
+      const source = String(code || "").replace(/\r\n?/g, "\n");
+      let hash = 2166136261;
+      for (let i = 0; i < source.length; i += 1) {
+        hash ^= source.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
       }
-    }
-  }
-
-  const nextLines = baseLines.slice();
-  const orderedDesc = orderedAsc.slice().sort((a, b) => b.startLine - a.startLine || b.index - a.index);
-  for (const patch of orderedDesc) {
-    const deleteCount = patch.endLine - patch.startLine + 1;
-    const replacementLines = patch.replacement ? patch.replacement.split("\n") : [];
-    nextLines.splice(patch.startLine - 1, deleteCount, ...replacementLines);
-  }
-
-  return { ok: true, code: nextLines.join("\n"), patchCount: orderedAsc.length };
-}
-
-function isRiskyHtmlPatch(baseCode, patches) {
-  const structuralCloseRe = /<\/\s*(main|body|html)\s*>/i;
-  const structuralBlockRe = /<\s*(header|nav|main|section|article|aside|footer)\b[\s\S]*?<\/\s*(header|nav|main|section|article|aside|footer)\s*>/i;
-  const baseLines = String(baseCode || "").replace(/\r\n?/g, "\n").split("\n");
-
-  for (const patch of patches) {
-    const span = patch.endLine - patch.startLine + 1;
-    const replacement = String(patch.replacement || "");
-    const replacementLines = replacement ? replacement.split("\n").length : 0;
-    const targetSlice = baseLines.slice(Math.max(0, patch.startLine - 1), patch.endLine).join("\n");
-
-    if (span <= 1 && structuralCloseRe.test(replacement)) {
-      return true;
-    }
-    if (span <= 2 && replacementLines >= 15 && structuralBlockRe.test(replacement)) {
-      return true;
-    }
-    if (
-      span <= 1 &&
-      /<\s*main\b/i.test(replacement) &&
-      !/<\s*main\b/i.test(targetSlice) &&
-      structuralCloseRe.test(replacement)
-    ) {
-      return true;
-    }
-  }
-
-  return false;
-}
+      const lineCount = source ? source.split("\n").length : 0;
+      const hashHex = (hash >>> 0).toString(16).padStart(8, "0");
+      return `${lineCount}L-${hashHex}`;
+    };
+const extractPatchEnvelope =
+  typeof patchUtils.extractPatchEnvelope === "function"
+    ? patchUtils.extractPatchEnvelope
+    : (text) => String(text || "");
+const parsePrismPatches =
+  typeof patchUtils.parsePrismPatches === "function"
+    ? patchUtils.parsePrismPatches
+    : () => ({ kind: "invalid", patches: [], baseFingerprint: "" });
+const applyPrismPatches =
+  typeof patchUtils.applyPrismPatches === "function"
+    ? patchUtils.applyPrismPatches
+    : () => ({ ok: false, reason: "missing_patch_utils" });
+const isRiskyHtmlPatch =
+  typeof patchUtils.isRiskyHtmlPatch === "function"
+    ? patchUtils.isRiskyHtmlPatch
+    : () => false;
+const assessPatchedHtmlIntegrity =
+  typeof patchUtils.assessPatchedHtmlIntegrity === "function"
+    ? patchUtils.assessPatchedHtmlIntegrity
+    : () => ({ ok: true, reason: "" });
+const hasCompletePatchPayload =
+  typeof patchUtils.hasCompletePatchPayload === "function"
+    ? patchUtils.hasCompletePatchPayload
+    : (text) => /<\s*prism-patches\b/i.test(String(text || ""));
 
 function resolveBasePayloadForPatch(callback) {
   const localCode = lastRenderableCode || (lastCode !== AUTO_IMPORT_PENDING ? lastCode : "");
@@ -536,6 +354,17 @@ function tryApplySmartPatchPayload(text) {
       return;
     }
 
+    const shouldValidateHtmlIntegrity =
+      baseLanguage === "html" || detectKind(baseCode) === "html";
+    if (shouldValidateHtmlIntegrity) {
+      const integrity = assessPatchedHtmlIntegrity(baseCode, applied.code);
+      if (!integrity.ok) {
+        console.warn("[Prism] Smart Patch ignored: broken layout detected.", integrity.reason);
+        notifyPatchApplyRejected("broken_layout", { details: integrity.reason });
+        return;
+      }
+    }
+
     const committed = commitRenderableCode(applied.code, baseLanguage);
     if (!committed) {
       console.warn("[Prism] Smart Patch ignored: patched result is not a supported code type.");
@@ -591,13 +420,6 @@ function extractLatestPatchCandidateText() {
   }
 
   return "";
-}
-
-function hasCompletePatchPayload(text) {
-  const source = String(text || "");
-  const hasOpen = /<\s*prism-patches\b/i.test(source) || /&lt;\s*prism-patches\b/i.test(source);
-  const hasClose = /<\s*\/\s*prism-patches\s*>/i.test(source) || /&lt;\s*\/\s*prism-patches\s*&gt;/i.test(source);
-  return hasOpen && hasClose;
 }
 
 function tryDirectPatchAutoImport(reason) {
@@ -715,7 +537,7 @@ document.addEventListener("copy", (event) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "PRISM_PANEL_STATUS") {
     panelOpen = Boolean(message.open);
     if (!panelOpen) {
@@ -724,7 +546,14 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 
   if (message.type === "PRISM_INJECT_PROMPT") {
-    handleInjectToChat(message.text, message.action);
+    handleInjectToChat(message.text, message.action)
+      .then((result) => {
+        sendResponse(result);
+      })
+      .catch((err) => {
+        sendResponse({ ok: false, reason: err?.message || "inject_exception" });
+      });
+    return true;
   }
 
   // UI 상태 변경 수신 (설정 동기화)
@@ -735,12 +564,18 @@ chrome.runtime.onMessage.addListener((message) => {
     }
     updateAutoImportObserver();
   }
+  return false;
 });
 
 function handleInjectToChat(text, action) {
+  return new Promise((resolve) => {
   const input = findBestInputCandidate();
+  if (!input) {
+    resolve({ ok: false, reason: "input_not_found" });
+    return;
+  }
 
-  if (input) {
+  try {
     intelligentExtractor?.registerInput?.(input);
     if (input.tagName === "TEXTAREA" || input.tagName === "INPUT") {
       input.value = text;
@@ -752,31 +587,45 @@ function handleInjectToChat(text, action) {
     input.focus();
     input.scrollIntoView({ behavior: "smooth", block: "center" });
 
-    if (action === "send") {
-      setTimeout(() => {
-        const sendBtn = findBestSendButtonCandidate();
-        intelligentExtractor?.noteSubmitAttempt?.({ sendButton: sendBtn, input });
-        isAiGenerating = true;
-        if (sendBtn) intelligentExtractor?.registerSendButton?.(sendBtn);
-
-        const sendDisabled = Boolean(
-          sendBtn && (sendBtn.disabled || sendBtn.getAttribute("aria-disabled") === "true")
-        );
-        if (sendBtn && !sendDisabled) {
-          sendBtn.click();
-        } else {
-          input.dispatchEvent(new KeyboardEvent('keydown', {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true
-          }));
-        }
-      }, 300);
+    if (action !== "send") {
+      resolve({ ok: true, sent: false, action: action || "inject" });
+      return;
     }
+  } catch (err) {
+    resolve({ ok: false, reason: err?.message || "inject_failed" });
+    return;
   }
+
+  setTimeout(() => {
+    try {
+      const sendBtn = findBestSendButtonCandidate();
+      intelligentExtractor?.noteSubmitAttempt?.({ sendButton: sendBtn, input });
+      isAiGenerating = true;
+      if (sendBtn) intelligentExtractor?.registerSendButton?.(sendBtn);
+
+      const sendDisabled = Boolean(
+        sendBtn && (sendBtn.disabled || sendBtn.getAttribute("aria-disabled") === "true")
+      );
+      if (sendBtn && !sendDisabled) {
+        sendBtn.click();
+        resolve({ ok: true, sent: true, via: "button" });
+        return;
+      }
+
+      input.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true
+      }));
+      resolve({ ok: true, sent: true, via: "enter" });
+    } catch (err) {
+      resolve({ ok: false, reason: err?.message || "send_failed" });
+    }
+  }, 300);
+  });
 }
 
 function triggerAutoImportRecovery(reason) {
@@ -967,96 +816,55 @@ function handleCodeCopy(text) {
   commitRenderableCode(normalized, kind);
 }
 
+const orbUi =
+  window.PrismOrbUI && typeof window.PrismOrbUI.create === "function"
+    ? window.PrismOrbUI.create({
+      orbId: ORB_ID,
+      orbActiveClass: ORB_ACTIVE_CLASS,
+      title: ORB_LABEL,
+      ariaLabel: "Open Prism side panel",
+      detectTheme,
+      autoHideMs: 6000,
+      feedbackHideMs: 500,
+      onOpen: () => {
+        const codeToOpen = lastCode === AUTO_IMPORT_PENDING ? lastRenderableCode : lastCode;
+        const languageToOpen = lastCode === AUTO_IMPORT_PENDING ? lastRenderableLanguage : lastLanguage;
+        if (!codeToOpen) return;
+
+        panelOpen = true;
+        destroyOrb();
+
+        safeSendMessage({
+          type: "OPEN_PRISM",
+          code: codeToOpen,
+          language: languageToOpen,
+          theme: detectTheme(),
+        });
+      },
+    })
+    : null;
+
 function ensureOrb() {
-  let orb = document.getElementById(ORB_ID);
-  if (orb) return orb;
-
-  orb = document.createElement("button");
-  orb.id = ORB_ID;
-  orb.type = "button";
-  orb.setAttribute("aria-label", "Open Prism side panel");
-  orb.setAttribute("title", "Open Prism");
-
-  orb.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const codeToOpen = lastCode === AUTO_IMPORT_PENDING ? lastRenderableCode : lastCode;
-    const languageToOpen = lastCode === AUTO_IMPORT_PENDING ? lastRenderableLanguage : lastLanguage;
-    if (!codeToOpen) return;
-
-    panelOpen = true;
-    destroyOrb();
-
-    safeSendMessage({
-      type: "OPEN_PRISM",
-      code: codeToOpen,
-      language: languageToOpen,
-      theme: detectTheme()
-    });
-  });
-
-  document.body.appendChild(orb);
-  return orb;
+  return orbUi?.ensureOrb?.() || null;
 }
 
 function showOrb() {
   if (panelOpen) return;
-  const orb = ensureOrb();
-  orb.dataset.theme = detectTheme();
-  requestAnimationFrame(() => {
-    orb.classList.add(ORB_ACTIVE_CLASS);
-  });
+  orbUi?.showOrb?.();
 }
 
 function showFeedback() {
-  const orb = ensureOrb();
-  if (hideTimer) clearTimeout(hideTimer);
-  if (cleanupTimer) clearTimeout(cleanupTimer);
-
-  orb.classList.add("prism-orb--feedback");
-  orb.dataset.theme = detectTheme();
-
-  void orb.offsetWidth;
-
-  requestAnimationFrame(() => {
-    orb.classList.add(ORB_ACTIVE_CLASS);
-  });
-
-  hideTimer = setTimeout(() => {
-    orb.classList.remove(ORB_ACTIVE_CLASS);
-    cleanupTimer = setTimeout(() => {
-      destroyOrb();
-    }, 500);
-  }, 500);
+  orbUi?.showFeedback?.();
 }
 
 function hideOrb() {
-  const orb = document.getElementById(ORB_ID);
-  if (orb) {
-    orb.classList.remove(ORB_ACTIVE_CLASS);
-  }
+  orbUi?.hideOrb?.();
 }
 
 function destroyOrb() {
-  if (hideTimer) {
-    window.clearTimeout(hideTimer);
-    hideTimer = null;
-  }
-  if (cleanupTimer) {
-    window.clearTimeout(cleanupTimer);
-    cleanupTimer = null;
-  }
-  const orb = document.getElementById(ORB_ID);
-  if (orb) {
-    orb.remove();
-  }
+  orbUi?.destroyOrb?.();
 }
 
 function scheduleHide() {
-  if (hideTimer) {
-    window.clearTimeout(hideTimer);
-  }
-  hideTimer = window.setTimeout(() => {
-    hideOrb();
-    hideTimer = null;
-  }, 6000);
+  orbUi?.scheduleHide?.();
 }
