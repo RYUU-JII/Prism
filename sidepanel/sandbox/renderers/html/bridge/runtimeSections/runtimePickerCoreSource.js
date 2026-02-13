@@ -676,7 +676,8 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
       }
 
       function refreshPickerTargetFromPointer(forceUpdate) {
-        if (!prismPickerActive) {
+        const canPreviewByShift = Boolean(prismShiftKeyDown);
+        if (!prismPickerActive && !canPreviewByShift) {
           refreshPickerDebugOverlay("pointer-refresh-while-inactive", null);
           return;
         }
@@ -715,7 +716,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
       }
 
       function requestPickerPointerRefresh(forceUpdate) {
-        if (!prismPickerActive) return;
+        if (!prismPickerActive && !prismShiftKeyDown) return;
         if (forceUpdate) {
           prismPickerRefreshForce = true;
         }
