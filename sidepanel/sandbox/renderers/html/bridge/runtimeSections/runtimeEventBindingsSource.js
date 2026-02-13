@@ -1,6 +1,12 @@
 export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
       document.addEventListener("mousemove", function(event) {
         if (isDebugOverlayEventTarget(event.target)) return;
+<<<<<<< codex/fix-overlay-display-in-picking-mode-nlnmlp
+        if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+          prismPointerInside = true;
+          prismPointerClientX = event.clientX;
+          prismPointerClientY = event.clientY;
+=======
         if (typeof ensurePrismFrameFocus === "function") {
           ensurePrismFrameFocus();
         }
@@ -9,10 +15,13 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         prismPointerClientY = event.clientY;
         if (typeof refreshPickerStatusHud === "function") {
           refreshPickerStatusHud("mousemove");
+>>>>>>> main
         }
         if (!prismPickerActive) return;
         event.stopPropagation();
         event.stopImmediatePropagation();
+<<<<<<< codex/fix-overlay-display-in-picking-mode-nlnmlp
+=======
         if (typeof requestPickerPointerRefresh === "function") {
           requestPickerPointerRefresh(false);
         } else {
@@ -33,6 +42,7 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
           refreshPickerStatusHud("mouseover");
         }
         if (!prismPickerActive) return;
+>>>>>>> main
         if (typeof requestPickerPointerRefresh === "function") {
           requestPickerPointerRefresh(false);
         } else {
