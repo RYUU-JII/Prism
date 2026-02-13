@@ -1,10 +1,14 @@
 export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
       document.addEventListener("mousemove", function(event) {
         if (isDebugOverlayEventTarget(event.target)) return;
-        if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
-          prismPointerInside = true;
-          prismPointerClientX = event.clientX;
-          prismPointerClientY = event.clientY;
+        if (typeof ensurePrismFrameFocus === "function") {
+          ensurePrismFrameFocus();
+        }
+        prismPointerInside = true;
+        prismPointerClientX = event.clientX;
+        prismPointerClientY = event.clientY;
+        if (typeof refreshPickerStatusHud === "function") {
+          refreshPickerStatusHud("mousemove");
         }
         if (!prismPickerActive) return;
         event.stopPropagation();
@@ -16,16 +20,65 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         }
       }, true);
 
-      document.addEventListener("mouseout", function(event) {
+      document.addEventListener("mouseover", function(event) {
+        if (isDebugOverlayEventTarget(event.target)) return;
+        if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+        if (typeof ensurePrismFrameFocus === "function") {
+          ensurePrismFrameFocus();
+        }
+        prismPointerInside = true;
+        prismPointerClientX = event.clientX;
+        prismPointerClientY = event.clientY;
+        if (typeof refreshPickerStatusHud === "function") {
+          refreshPickerStatusHud("mouseover");
+        }
         if (!prismPickerActive) return;
+        if (typeof requestPickerPointerRefresh === "function") {
+          requestPickerPointerRefresh(false);
+        } else {
+          refreshPickerTargetFromPointer();
+        }
+      }, true);
+
+      document.addEventListener("mouseout", function(event) {
         if (event.relatedTarget) return;
+        prismPointerInside = false;
+        prismPointerClientX = null;
+        prismPointerClientY = null;
+        if (typeof refreshPickerStatusHud === "function") {
+          refreshPickerStatusHud("mouseout");
+        }
+        if (!prismPickerActive) return;
         invalidatePickerPointerState();
       }, true);
 
       window.addEventListener("blur", function() {
-        if (!prismPickerActive) return;
-        invalidatePickerPointerState();
+        if (typeof refreshPickerStatusHud === "function") {
+          refreshPickerStatusHud("blur");
+        }
       });
+
+      document.addEventListener("keydown", function(event) {
+        if (event.key !== "Shift") return;
+        prismShiftKeyDown = true;
+        if (typeof refreshPickerStatusHud === "function") {
+          refreshPickerStatusHud("shift-down");
+        }
+        try {
+          parent.postMessage({ type: "PRISM_SHIFT_PEEK", active: true }, "*");
+        } catch (err) {}
+      }, true);
+
+      document.addEventListener("keyup", function(event) {
+        if (event.key !== "Shift") return;
+        prismShiftKeyDown = false;
+        if (typeof refreshPickerStatusHud === "function") {
+          refreshPickerStatusHud("shift-up");
+        }
+        try {
+          parent.postMessage({ type: "PRISM_SHIFT_PEEK", active: false }, "*");
+        } catch (err) {}
+      }, true);
 
       [
         "pointerdown",
@@ -39,6 +92,9 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         "touchend"
       ].forEach(function(type) {
         document.addEventListener(type, function(event) {
+          if (typeof ensurePrismFrameFocus === "function") {
+            ensurePrismFrameFocus();
+          }
           if (!prismPickerActive) return;
           if (isDebugOverlayEventTarget(event.target)) return;
           event.preventDefault();
@@ -96,6 +152,12 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
 
         const resolvedTarget = normalizePickerTarget(target) || target;
         const line = resolvePickerClickLine(resolvedTarget);
+        if (!Number.isFinite(line) || line <= 0) {
+          if (typeof refreshPickerDebugOverlay === "function") {
+            refreshPickerDebugOverlay("click-unmapped-target", resolvedTarget);
+          }
+          return;
+        }
         const token =
           typeof resolvePickerClickToken === "function"
             ? resolvePickerClickToken(resolvedTarget, line)

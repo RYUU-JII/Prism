@@ -253,6 +253,9 @@ export const SNAPSHOT_RUNTIME_PRELUDE_SOURCE = `
       let prismLastTargetResolutionDebug = null;
       let prismDebugSnapshotPinned = false;
       let prismDebugPinnedSnapshot = null;
+      let prismShiftKeyDown = false;
+      let prismStatusHudEl = null;
+      let prismStatusHudTextEl = null;
 
       function schedulePrismRaf(entry) {
         if (!nativeRequestAnimationFrame) return;
@@ -523,6 +526,141 @@ export const SNAPSHOT_RUNTIME_PRELUDE_SOURCE = `
         prismDebugOverlayBodyEl = null;
       }
 
+      function ensurePrismFrameFocus() {
+        try {
+          if (typeof document.hasFocus === "function" && document.hasFocus()) return;
+          const activeEl = document.activeElement;
+          if (activeEl && activeEl !== document.body) {
+            const tag = String(activeEl.tagName || "").toLowerCase();
+            if (tag === "input" || tag === "textarea" || activeEl.isContentEditable) {
+              return;
+            }
+          }
+          if (typeof window.focus === "function") {
+            window.focus();
+          }
+        } catch (err) {}
+      }
+
+      function ensurePickerStatusHudElement() {
+        if (prismStatusHudEl && prismStatusHudEl.isConnected) return prismStatusHudEl;
+        const panel = document.createElement("div");
+        panel.dataset.prismPickerStatusHud = "true";
+        panel.style.position = "fixed";
+        panel.style.left = "12px";
+        panel.style.top = "12px";
+        panel.style.zIndex = "2147483646";
+        panel.style.pointerEvents = "none";
+        panel.style.borderRadius = "8px";
+        panel.style.border = "1px solid rgba(20, 184, 166, 0.42)";
+        panel.style.background = "rgba(7, 20, 27, 0.84)";
+        panel.style.boxShadow = "0 8px 18px rgba(0, 0, 0, 0.26)";
+        panel.style.color = "#d8fff9";
+        panel.style.fontFamily = "'Consolas','Menlo','Monaco','Courier New',monospace";
+        panel.style.fontSize = "10px";
+        panel.style.lineHeight = "1.35";
+        panel.style.padding = "5px 7px";
+        panel.style.minWidth = "160px";
+        panel.style.maxWidth = "320px";
+        panel.style.whiteSpace = "pre";
+        panel.style.opacity = "0";
+        panel.style.transform = "translate3d(0,0,0)";
+
+        const text = document.createElement("pre");
+        text.style.margin = "0";
+        text.style.whiteSpace = "pre-wrap";
+        text.style.wordBreak = "break-word";
+        panel.appendChild(text);
+
+        document.documentElement.appendChild(panel);
+        prismStatusHudEl = panel;
+        prismStatusHudTextEl = text;
+        return panel;
+      }
+
+      function hidePickerStatusHud() {
+        if (!prismStatusHudEl) return;
+        prismStatusHudEl.style.opacity = "0";
+      }
+
+      function refreshPickerStatusHud(reason, targetOverride) {
+        const panel = ensurePickerStatusHudElement();
+        if (!panel || !prismStatusHudTextEl) return;
+
+        const target = pickDebugTarget(targetOverride);
+        const line = target ? getDebugLineFromTarget(target) : null;
+        const targetLabel = target ? buildDebugElementLabel(target, line) : "(none)";
+        const visualMode =
+          prismPickerVisualState && prismPickerVisualState.mode
+            ? prismPickerVisualState.mode
+            : "idle";
+        const hoverVisible = Boolean(
+          prismPickerHoverTarget &&
+          prismPickerHoverTarget.isConnected &&
+          prismPickerHoverTarget.classList &&
+          prismPickerHoverTarget.classList.contains("prism-picker-hover")
+        );
+        const focusVisible = Boolean(
+          prismPickerFocusedInstruction &&
+          prismPickerFocusedInstruction.isConnected &&
+          prismPickerFocusedInstruction.classList &&
+          prismPickerFocusedInstruction.classList.contains("prism-has-instruction--picker-focus")
+        );
+        const overlayVisible = hoverVisible || focusVisible;
+        const runtimeMode = prismViewMode ? "view" : "edit";
+        const resolutionBranch =
+          prismLastTargetResolutionDebug && prismLastTargetResolutionDebug.branch
+            ? prismLastTargetResolutionDebug.branch
+            : "-";
+        const hasMappedLine = Boolean(
+          target &&
+          typeof getLineTarget === "function" &&
+          getLineTarget(target)
+        );
+
+        prismStatusHudTextEl.textContent = [
+          "mode=" + runtimeMode +
+            " picker=" + (prismPickerActive ? "on" : "off") +
+            " shift=" + (prismShiftKeyDown ? "down" : "up"),
+          "target=" + targetLabel,
+          "visual=" + visualMode + " overlay=" + (overlayVisible ? "on" : "off"),
+          "resolve=" + resolutionBranch + " mapped=" + (hasMappedLine ? "yes" : "no"),
+          "reason=" + (reason || "-")
+        ].join("\\n");
+
+        if (!Number.isFinite(prismPointerClientX) || !Number.isFinite(prismPointerClientY)) {
+          hidePickerStatusHud();
+          return;
+        }
+
+        const shouldShow = Boolean(
+          prismPointerInside ||
+          prismShiftKeyDown ||
+          prismPickerActive ||
+          overlayVisible
+        );
+        if (!shouldShow) {
+          hidePickerStatusHud();
+          return;
+        }
+
+        const panelRect = panel.getBoundingClientRect();
+        const margin = 10;
+        let left = prismPointerClientX + 14;
+        let top = prismPointerClientY + 14;
+        if (left + panelRect.width + margin > window.innerWidth) {
+          left = prismPointerClientX - panelRect.width - 14;
+        }
+        if (top + panelRect.height + margin > window.innerHeight) {
+          top = window.innerHeight - panelRect.height - margin;
+        }
+        left = Math.max(margin, left);
+        top = Math.max(margin, top);
+        panel.style.left = Math.round(left) + "px";
+        panel.style.top = Math.round(top) + "px";
+        panel.style.opacity = "1";
+      }
+
       function setPickerDebugOverlayEnabled(enabled) {
         const next = Boolean(enabled);
         prismDebugOverlayEnabled = next;
@@ -702,6 +840,7 @@ export const SNAPSHOT_RUNTIME_PRELUDE_SOURCE = `
       }
 
       function refreshPickerDebugOverlay(reason, targetOverride) {
+        refreshPickerStatusHud(reason, targetOverride);
         if (!prismDebugOverlayEnabled) return;
         if (prismDebugSnapshotPinned && prismDebugPinnedSnapshot) {
           renderPickerDebugSnapshot(prismDebugPinnedSnapshot);
