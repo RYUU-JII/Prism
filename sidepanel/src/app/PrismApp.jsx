@@ -26,6 +26,8 @@ import {
 const ENABLE_EXPERT_MODE = false;
 const ENABLE_PICKER = true;
 const SNAPSHOT_COOLDOWN_MS = 900;
+const SIDEPANEL_MAX_WIDTH_PX = 1000;
+const COMMAND_BAR_MAX_WIDTH_RATIO = 0.5;
 const DEFAULT_RUNTIME_CAPABILITIES = Object.freeze({
   picker: true,
   snapshot: true,
@@ -448,6 +450,7 @@ function PrismApp() {
   const [previewInstructionLine, setPreviewInstructionLine] = useState(null);
   const [notesPulseToken, setNotesPulseToken] = useState(0);
   const [repairNudgeToken, setRepairNudgeToken] = useState(0);
+  const [altPeekActive, setAltPeekActive] = useState(false);
   const {
     pickerActive,
     focusLine,
@@ -553,8 +556,9 @@ function PrismApp() {
   const pickerEnabledForRuntime = Boolean(
     ENABLE_PICKER &&
       !isPickerDisabled &&
-      pickerActive
+      (pickerActive || altPeekActive)
   );
+  const isRuntimeViewMode = !isEditorModeEnabled && !pickerEnabledForRuntime;
   const { targetTabId, isWindowMode } = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return {
@@ -591,30 +595,9 @@ function PrismApp() {
   }, [isWindowMode]);
 
   useEffect(() => {
-    const panelEl = panelShellRef.current;
-    if (!panelEl) return undefined;
-
-    const setHalfWidth = () => {
-      const width = Number(panelEl.clientWidth) || 0;
-      if (width <= 0) return;
-      setCommandBarMaxWidthPx(Math.round(width * 0.5));
-    };
-
-    setHalfWidth();
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", setHalfWidth);
-      return () => {
-        window.removeEventListener("resize", setHalfWidth);
-      };
-    }
-
-    const observer = new ResizeObserver(() => {
-      setHalfWidth();
-    });
-    observer.observe(panelEl);
-    return () => {
-      observer.disconnect();
-    };
+    setCommandBarMaxWidthPx(
+      Math.round(SIDEPANEL_MAX_WIDTH_PX * COMMAND_BAR_MAX_WIDTH_RATIO)
+    );
   }, []);
 
   const flashCapture = useCallback(() => {
@@ -660,9 +643,9 @@ function PrismApp() {
           : null,
       settings: uiSettings,
       autoImportResponse: Boolean(uiSettings.autoImportResponse),
-      isViewMode: !isEditorModeEnabled,
+      isViewMode: isRuntimeViewMode,
     };
-  }, [canvasFrozen, isEditorModeEnabled, pickerEnabledForRuntime, previewInstructionLine, runtimeInstructions, selectedInstructionToken, selectedLine, targetedInstructionCount, uiSettings]);
+  }, [canvasFrozen, isEditorModeEnabled, isRuntimeViewMode, pickerEnabledForRuntime, previewInstructionLine, runtimeInstructions, selectedInstructionToken, selectedLine, targetedInstructionCount, uiSettings]);
 
   const sendUiState = useCallback((payloadOverride) => {
     const viewer = viewerRef.current;
@@ -960,6 +943,47 @@ function PrismApp() {
   }, [isPickerDisabled, pickerActive]);
 
   useEffect(() => {
+    if (!altPeekActive) return;
+    if (isPickerDisabled) {
+      setAltPeekActive(false);
+    }
+  }, [altPeekActive, isPickerDisabled]);
+
+  useEffect(() => {
+    if (!ENABLE_PICKER) return undefined;
+
+    const handleAltDown = (event) => {
+      if (event.key !== "Alt") return;
+      if (isPickerDisabled) return;
+      setAltPeekActive(true);
+    };
+    const handleAltUp = (event) => {
+      if (event.key !== "Alt") return;
+      setAltPeekActive(false);
+    };
+    const clearAltPeek = () => {
+      setAltPeekActive(false);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        setAltPeekActive(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleAltDown, true);
+    window.addEventListener("keyup", handleAltUp, true);
+    window.addEventListener("blur", clearAltPeek);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("keydown", handleAltDown, true);
+      window.removeEventListener("keyup", handleAltUp, true);
+      window.removeEventListener("blur", clearAltPeek);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isPickerDisabled]);
+
+  useEffect(() => {
     if (!isEditorModeEnabled) return;
     if (isPickerDisabled) return;
     if (!isHtmlPayload) return;
@@ -1011,6 +1035,18 @@ function PrismApp() {
 
       if (data.type === "PRISM_RETURN_REQUEST") {
         returnToSourceTab();
+        return;
+      }
+
+      if (data.type === "PRISM_ALT_PEEK") {
+        const nextActive = Boolean(data.active);
+        if (!ENABLE_PICKER || isPickerDisabled) {
+          if (!nextActive) {
+            setAltPeekActive(false);
+          }
+          return;
+        }
+        setAltPeekActive(nextActive);
         return;
       }
 
@@ -1105,7 +1141,7 @@ function PrismApp() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [activeInstructionLine, activeInstructionToken, pickerActive, returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
+  }, [activeInstructionLine, activeInstructionToken, isPickerDisabled, pickerActive, returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
 
   const handleSnapshot = useCallback((action = "download") => {
     const viewer = viewerRef.current;
@@ -1438,6 +1474,22 @@ function PrismApp() {
     return applyPostExportState();
   }, [instructionEntries, selectedInstructionToken, selectedLine, sendPromptToActiveTab, showToast, uiSettings]);
 
+  const triggerRepairNudge = useCallback(() => {
+    setRepairNudgeToken((prev) => prev + 1);
+  }, []);
+
+  const handleRequestFullCodeRepair = useCallback(async () => {
+    const confirmed = window.confirm("자동 복구에 실패했습니다. Full Code 요청으로 강제 전송할까요?");
+    if (!confirmed) return;
+    await handleExportPrompt({
+      forceFullSync: true,
+      actionOverride: "send",
+      skipClipboard: true,
+      keepMemos: true,
+      toastMessage: "Repair 요청: Full Code 전송됨",
+    });
+  }, [handleExportPrompt]);
+
   useEffect(() => {
     if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return undefined;
 
@@ -1608,22 +1660,6 @@ function PrismApp() {
     dispatchInteraction({ type: "TOGGLE_FROZEN" });
     showToast(canvasFrozen ? "재생 재개됨" : "일시정지됨");
   }, [canvasFrozen, isFreezeDisabled, runtimeCapabilities?.reasons?.freeze, showToast]);
-
-  const triggerRepairNudge = useCallback(() => {
-    setRepairNudgeToken((prev) => prev + 1);
-  }, []);
-
-  const handleRequestFullCodeRepair = useCallback(async () => {
-    const confirmed = window.confirm("자동 복구에 실패했습니다. Full Code 요청으로 강제 전송할까요?");
-    if (!confirmed) return;
-    await handleExportPrompt({
-      forceFullSync: true,
-      actionOverride: "send",
-      skipClipboard: true,
-      keepMemos: true,
-      toastMessage: "Repair 요청: Full Code 전송됨",
-    });
-  }, [handleExportPrompt]);
 
   const handleTogglePickerShortcut = useCallback(() => {
     if (isPickerDisabled) {

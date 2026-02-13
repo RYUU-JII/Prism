@@ -218,7 +218,7 @@ const CommandBar = ({
             placeholder={
               hasSelection
                 ? "선택 라인 메모를 입력하고 Enter"
-                : "라인 미지정 메모를 입력하세요 (서술형 설명 가능)"
+                : "라인 미지정 메모를 입력하세요"
             }
             rows={1}
             value={text}
@@ -227,8 +227,8 @@ const CommandBar = ({
             onKeyDown={handleKeyDown}
             disabled={inputLocked}
           />
-          <div className="panel-shell__command-actions">
-            {hasSelection && (
+          {hasSelection && (
+            <div className="panel-shell__command-actions">
               <button
                 type="button"
                 className="panel-shell__command-clear-inline"
@@ -237,21 +237,21 @@ const CommandBar = ({
               >
                 ×
               </button>
-            )}
-            <button
-              type="button"
-              className="panel-shell__command-send-inline"
-              onClick={handleSend}
-              disabled={isExportDisabled}
-              data-tooltip="Send to AI (All memos & code)"
-              aria-label="Send to AI"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M21.99 21 1 12 21.99 3 22 10 7 12l15 2z" />
-              </svg>
-            </button>
-          </div>
+            </div>
+          )}
         </div>
+        <button
+          type="button"
+          className="panel-shell__command-send-inline"
+          onClick={handleSend}
+          disabled={isExportDisabled}
+          data-tooltip="Send to AI (All memos & code)"
+          aria-label="Send to AI"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21.99 21 1 12 21.99 3 22 10 7 12l15 2z" />
+          </svg>
+        </button>
       </div>
     </div>
   );

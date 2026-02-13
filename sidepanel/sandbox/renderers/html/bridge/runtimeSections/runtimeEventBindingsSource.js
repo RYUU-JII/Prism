@@ -1,12 +1,26 @@
 export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
       document.addEventListener("mousemove", function(event) {
-        if (!prismPickerActive) return;
         if (isDebugOverlayEventTarget(event.target)) return;
-        event.stopPropagation();
-        event.stopImmediatePropagation();
         prismPointerInside = true;
         prismPointerClientX = event.clientX;
         prismPointerClientY = event.clientY;
+        if (!prismPickerActive) return;
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        if (typeof requestPickerPointerRefresh === "function") {
+          requestPickerPointerRefresh(false);
+        } else {
+          refreshPickerTargetFromPointer();
+        }
+      }, true);
+
+      document.addEventListener("mouseover", function(event) {
+        if (isDebugOverlayEventTarget(event.target)) return;
+        if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+        prismPointerInside = true;
+        prismPointerClientX = event.clientX;
+        prismPointerClientY = event.clientY;
+        if (!prismPickerActive) return;
         if (typeof requestPickerPointerRefresh === "function") {
           requestPickerPointerRefresh(false);
         } else {
@@ -15,15 +29,38 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
       }, true);
 
       document.addEventListener("mouseout", function(event) {
-        if (!prismPickerActive) return;
         if (event.relatedTarget) return;
+        prismPointerInside = false;
+        prismPointerClientX = null;
+        prismPointerClientY = null;
+        if (!prismPickerActive) return;
         invalidatePickerPointerState();
       }, true);
 
       window.addEventListener("blur", function() {
+        prismPointerInside = false;
+        prismPointerClientX = null;
+        prismPointerClientY = null;
+        try {
+          parent.postMessage({ type: "PRISM_ALT_PEEK", active: false }, "*");
+        } catch (err) {}
         if (!prismPickerActive) return;
         invalidatePickerPointerState();
       });
+
+      document.addEventListener("keydown", function(event) {
+        if (event.key !== "Alt") return;
+        try {
+          parent.postMessage({ type: "PRISM_ALT_PEEK", active: true }, "*");
+        } catch (err) {}
+      }, true);
+
+      document.addEventListener("keyup", function(event) {
+        if (event.key !== "Alt") return;
+        try {
+          parent.postMessage({ type: "PRISM_ALT_PEEK", active: false }, "*");
+        } catch (err) {}
+      }, true);
 
       [
         "pointerdown",
