@@ -137,7 +137,6 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         if (!sourceEl) return null;
         if (sourceEl === document.documentElement || sourceEl === document.body) return null;
         if (shouldSkipPickerElement(sourceEl)) return null;
-        if (!getLineTarget(sourceEl)) return null;
         return sourceEl;
       }
 
@@ -183,12 +182,14 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
           seen.add(candidate);
           const rect = getOverlayRectForTarget(candidate);
           const area = getRectArea(rect);
+          const lineTarget = getLineTarget(candidate);
           samples.push({
             candidate,
             area,
             x: sx,
             y: sy,
-            sourceKind
+            sourceKind,
+            hasLineTarget: Boolean(lineTarget)
           });
         }
 
@@ -214,40 +215,57 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         }
 
         if (samples.length === 0) {
-          return { target: null, branch: "direct-hit-no-line-candidate", samples };
+          return { target: null, branch: "direct-hit-no-candidate", samples };
         }
 
-        let bestNonZero = null;
-        for (let i = 0; i < samples.length; i += 1) {
-          const item = samples[i];
-          if (!(item.area > 0)) continue;
-          if (!bestNonZero) {
-            bestNonZero = item;
-            continue;
+        function pickBestSample(requireLineTarget) {
+          let bestNonZero = null;
+          for (let i = 0; i < samples.length; i += 1) {
+            const item = samples[i];
+            if (requireLineTarget && !item.hasLineTarget) continue;
+            if (!(item.area > 0)) continue;
+            if (!bestNonZero) {
+              bestNonZero = item;
+              continue;
+            }
+            if (item.area < bestNonZero.area) {
+              bestNonZero = item;
+              continue;
+            }
+            if (
+              item.area === bestNonZero.area &&
+              getDistanceSq(item.x, item.y, x, y) < getDistanceSq(bestNonZero.x, bestNonZero.y, x, y)
+            ) {
+              bestNonZero = item;
+            }
           }
-          if (item.area < bestNonZero.area) {
-            bestNonZero = item;
-            continue;
+          if (bestNonZero) return bestNonZero;
+
+          for (let i = 0; i < samples.length; i += 1) {
+            const item = samples[i];
+            if (requireLineTarget && !item.hasLineTarget) continue;
+            return item;
           }
-          if (
-            item.area === bestNonZero.area &&
-            getDistanceSq(item.x, item.y, x, y) < getDistanceSq(bestNonZero.x, bestNonZero.y, x, y)
-          ) {
-            bestNonZero = item;
-          }
+          return null;
         }
 
-        if (bestNonZero) {
+        const bestLineSample = pickBestSample(true);
+        if (bestLineSample) {
           return {
-            target: bestNonZero.candidate,
-            branch: "direct-hit-smallest-nonzero",
+            target: bestLineSample.candidate,
+            branch: "direct-hit-line-target",
             samples
           };
         }
 
+        const bestAnySample = pickBestSample(false);
+        if (!bestAnySample) {
+          return { target: null, branch: "direct-hit-no-candidate-after-filter", samples };
+        }
+
         return {
-          target: samples[0].candidate,
-          branch: "direct-hit-first-candidate",
+          target: bestAnySample.candidate,
+          branch: "direct-hit-fallback-unmapped",
           samples
         };
       }
@@ -466,7 +484,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
           }
         }
         const lineTarget = getLineTarget(target);
-        return getTargetLine(lineTarget || target) || 1;
+        return getTargetLine(lineTarget || target) || null;
       }
 
       function resolvePickerClickToken(target, line) {
@@ -1001,16 +1019,17 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
           .slice(0, 8)
           .map(function(entry) {
             if (!entry || !entry.candidate) return null;
-            const base = describeDebugElement(entry.candidate, true);
-            if (!base) return null;
-            base.sample = {
-              x: roundDebugNumber(entry.x, 1),
-              y: roundDebugNumber(entry.y, 1),
-              source: entry.sourceKind || ""
-            };
-            base.sampleArea = roundDebugNumber(entry.area, 1);
-            return base;
-          })
+          const base = describeDebugElement(entry.candidate, true);
+          if (!base) return null;
+          base.sample = {
+            x: roundDebugNumber(entry.x, 1),
+            y: roundDebugNumber(entry.y, 1),
+            source: entry.sourceKind || ""
+          };
+          base.sampleArea = roundDebugNumber(entry.area, 1);
+          base.sampleHasLine = Boolean(entry.hasLineTarget);
+          return base;
+        })
           .filter(Boolean);
 
         if (!resolution || !resolution.target) {

@@ -641,8 +641,8 @@
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
   padding: 6px 8px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: end;
   gap: 5px;
   position: relative;
   z-index: 1;
@@ -652,8 +652,9 @@
 .panel-shell__command-help {
   position: relative;
   display: inline-flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 6px;
+  align-self: end;
 }
 
 .panel-shell__command-repair-cta {
@@ -684,14 +685,14 @@
 }
 
 .panel-shell__command-help-btn {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid rgba(0, 0, 0, 0.14);
-  border-radius: 6px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
   color: #5f6f83;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1;
   display: inline-flex;
@@ -699,6 +700,7 @@
   justify-content: center;
   cursor: pointer;
   transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+  align-self: end;
 }
 
 .panel-shell__command-help-btn:hover,
@@ -766,7 +768,7 @@
 .panel-shell__command-editor {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
+  align-items: end;
   gap: 6px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 10px;
@@ -852,7 +854,7 @@
   -ms-overflow-style: none;
   border: 0;
   border-radius: 0;
-  padding: 2px 56px 2px 0;
+  padding: 2px 24px 2px 0;
   font: inherit;
   font-size: 12px;
   line-height: 1.35;
@@ -890,6 +892,7 @@
   align-items: center;
   justify-content: center;
   transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  align-self: end;
 }
 
 .panel-shell__command-send-inline svg {
@@ -1486,7 +1489,7 @@
   }
 
   .panel-shell__command-input-wrapper {
-    padding: 7px 8px;
+    padding: 6px 8px;
   }
 
   .notes-island__row-main {
@@ -1506,7 +1509,7 @@
   .panel-shell__command-bar {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "input";
-    align-items: stretch;
+    align-items: end;
     gap: 0;
   }
 

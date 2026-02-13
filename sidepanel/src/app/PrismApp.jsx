@@ -26,6 +26,8 @@ import {
 const ENABLE_EXPERT_MODE = false;
 const ENABLE_PICKER = true;
 const SNAPSHOT_COOLDOWN_MS = 900;
+const SIDEPANEL_MAX_WIDTH_PX = 1000;
+const COMMAND_BAR_MAX_WIDTH_RATIO = 0.5;
 const DEFAULT_RUNTIME_CAPABILITIES = Object.freeze({
   picker: true,
   snapshot: true,
@@ -448,6 +450,7 @@ function PrismApp() {
   const [previewInstructionLine, setPreviewInstructionLine] = useState(null);
   const [notesPulseToken, setNotesPulseToken] = useState(0);
   const [repairNudgeToken, setRepairNudgeToken] = useState(0);
+  const [altPeekActive, setAltPeekActive] = useState(false);
   const {
     pickerActive,
     focusLine,
@@ -461,9 +464,8 @@ function PrismApp() {
 
   const viewerRef = useRef(null);
   const panelShellRef = useRef(null);
-  const shiftHoldPickerActiveRef = useRef(false);
-  const pickerWasActiveBeforeShiftHoldRef = useRef(false);
-  const wasEditorModeEnabledRef = useRef(isEditorModeEnabled);
+  const altHoldPickerActiveRef = useRef(false);
+  const pickerWasActiveBeforeAltHoldRef = useRef(false);
   const viewerReadyRef = useRef(false);
   const pendingPayloadRef = useRef(null);
   const pendingUiStateRef = useRef(null);
@@ -557,8 +559,9 @@ function PrismApp() {
   const pickerEnabledForRuntime = Boolean(
     ENABLE_PICKER &&
       !isPickerDisabled &&
-      pickerActive
+      (pickerActive || altPeekActive)
   );
+  const isRuntimeViewMode = !isEditorModeEnabled && !pickerEnabledForRuntime;
   const { targetTabId, isWindowMode } = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return {
@@ -595,30 +598,9 @@ function PrismApp() {
   }, [isWindowMode]);
 
   useEffect(() => {
-    const panelEl = panelShellRef.current;
-    if (!panelEl) return undefined;
-
-    const setHalfWidth = () => {
-      const width = Number(panelEl.clientWidth) || 0;
-      if (width <= 0) return;
-      setCommandBarMaxWidthPx(Math.round(width * 0.5));
-    };
-
-    setHalfWidth();
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", setHalfWidth);
-      return () => {
-        window.removeEventListener("resize", setHalfWidth);
-      };
-    }
-
-    const observer = new ResizeObserver(() => {
-      setHalfWidth();
-    });
-    observer.observe(panelEl);
-    return () => {
-      observer.disconnect();
-    };
+    setCommandBarMaxWidthPx(
+      Math.round(SIDEPANEL_MAX_WIDTH_PX * COMMAND_BAR_MAX_WIDTH_RATIO)
+    );
   }, []);
 
   const flashCapture = useCallback(() => {
@@ -664,9 +646,9 @@ function PrismApp() {
           : null,
       settings: uiSettings,
       autoImportResponse: Boolean(uiSettings.autoImportResponse),
-      isViewMode: !isEditorModeEnabled,
+      isViewMode: isRuntimeViewMode,
     };
-  }, [canvasFrozen, isEditorModeEnabled, pickerEnabledForRuntime, previewInstructionLine, runtimeInstructions, selectedInstructionToken, selectedLine, targetedInstructionCount, uiSettings]);
+  }, [canvasFrozen, isEditorModeEnabled, isRuntimeViewMode, pickerEnabledForRuntime, previewInstructionLine, runtimeInstructions, selectedInstructionToken, selectedLine, targetedInstructionCount, uiSettings]);
 
   const sendUiState = useCallback((payloadOverride) => {
     const viewer = viewerRef.current;
@@ -964,9 +946,42 @@ function PrismApp() {
   }, [isPickerDisabled, pickerActive]);
 
   useEffect(() => {
-    const wasEditorModeEnabled = wasEditorModeEnabledRef.current;
-    wasEditorModeEnabledRef.current = isEditorModeEnabled;
-    if (wasEditorModeEnabled === isEditorModeEnabled) return;
+    if (!altPeekActive) return;
+    if (isPickerDisabled) {
+      setAltPeekActive(false);
+    }
+  }, [altPeekActive, isPickerDisabled]);
+
+  useEffect(() => {
+    if (!ENABLE_PICKER) return undefined;
+
+    const handlePeekModifierDown = (event) => {
+      if (event.key !== "Shift") return;
+      if (isPickerDisabled) return;
+      setAltPeekActive(true);
+    };
+    const handlePeekModifierUp = (event) => {
+      if (event.key !== "Shift") return;
+      setAltPeekActive(false);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        setAltPeekActive(false);
+      }
+    };
+
+    window.addEventListener("keydown", handlePeekModifierDown, true);
+    window.addEventListener("keyup", handlePeekModifierUp, true);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("keydown", handlePeekModifierDown, true);
+      window.removeEventListener("keyup", handlePeekModifierUp, true);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isPickerDisabled]);
+
+  useEffect(() => {
     if (!isEditorModeEnabled) return;
     if (isPickerDisabled) return;
     if (pickerActive) return;
@@ -1017,6 +1032,18 @@ function PrismApp() {
 
       if (data.type === "PRISM_RETURN_REQUEST") {
         returnToSourceTab();
+        return;
+      }
+
+      if (data.type === "PRISM_SHIFT_PEEK") {
+        const nextActive = Boolean(data.active);
+        if (!ENABLE_PICKER || isPickerDisabled) {
+          if (!nextActive) {
+            setAltPeekActive(false);
+          }
+          return;
+        }
+        setAltPeekActive(nextActive);
         return;
       }
 
@@ -1111,7 +1138,7 @@ function PrismApp() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [activeInstructionLine, activeInstructionToken, pickerActive, returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
+  }, [activeInstructionLine, activeInstructionToken, isPickerDisabled, pickerActive, returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
 
   const handleSnapshot = useCallback((action = "download") => {
     const viewer = viewerRef.current;
@@ -1444,6 +1471,22 @@ function PrismApp() {
     return applyPostExportState();
   }, [instructionEntries, selectedInstructionToken, selectedLine, sendPromptToActiveTab, showToast, uiSettings]);
 
+  const triggerRepairNudge = useCallback(() => {
+    setRepairNudgeToken((prev) => prev + 1);
+  }, []);
+
+  const handleRequestFullCodeRepair = useCallback(async () => {
+    const confirmed = window.confirm("자동 복구에 실패했습니다. Full Code 요청으로 강제 전송할까요?");
+    if (!confirmed) return;
+    await handleExportPrompt({
+      forceFullSync: true,
+      actionOverride: "send",
+      skipClipboard: true,
+      keepMemos: true,
+      toastMessage: "Repair 요청: Full Code 전송됨",
+    });
+  }, [handleExportPrompt]);
+
   useEffect(() => {
     if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return undefined;
 
@@ -1607,8 +1650,8 @@ function PrismApp() {
 
   useEffect(() => {
     if (isEditorModeEnabled) return;
-    shiftHoldPickerActiveRef.current = false;
-    pickerWasActiveBeforeShiftHoldRef.current = false;
+    altHoldPickerActiveRef.current = false;
+    pickerWasActiveBeforeAltHoldRef.current = false;
     if (pickerActive) {
       dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
     }
@@ -1632,22 +1675,6 @@ function PrismApp() {
     dispatchInteraction({ type: "TOGGLE_FROZEN" });
     showToast(canvasFrozen ? "재생 재개됨" : "일시정지됨");
   }, [canvasFrozen, isFreezeDisabled, runtimeCapabilities?.reasons?.freeze, showToast]);
-
-  const triggerRepairNudge = useCallback(() => {
-    setRepairNudgeToken((prev) => prev + 1);
-  }, []);
-
-  const handleRequestFullCodeRepair = useCallback(async () => {
-    const confirmed = window.confirm("자동 복구에 실패했습니다. Full Code 요청으로 강제 전송할까요?");
-    if (!confirmed) return;
-    await handleExportPrompt({
-      forceFullSync: true,
-      actionOverride: "send",
-      skipClipboard: true,
-      keepMemos: true,
-      toastMessage: "Repair 요청: Full Code 전송됨",
-    });
-  }, [handleExportPrompt]);
 
   const handleTogglePickerShortcut = useCallback(() => {
     if (isPickerDisabled) {
@@ -1738,12 +1765,12 @@ function PrismApp() {
     const handleShiftHoldKeyDown = (event) => {
       if (event.key !== "Shift") return;
       if (event.repeat) return;
-      if (event.altKey || event.metaKey || event.ctrlKey) return;
-      if (isPickerDisabled) return;
-      if (shiftHoldPickerActiveRef.current) return;
+      if (isEditableTarget(event.target)) return;
+      if (!isEditorModeEnabled || isPickerDisabled) return;
+      if (altHoldPickerActiveRef.current) return;
 
-      shiftHoldPickerActiveRef.current = true;
-      pickerWasActiveBeforeShiftHoldRef.current = pickerActive;
+      altHoldPickerActiveRef.current = true;
+      pickerWasActiveBeforeAltHoldRef.current = pickerActive;
 
       if (!pickerActive) {
         dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: true });
@@ -1751,11 +1778,11 @@ function PrismApp() {
     };
 
     const releaseShiftHoldPicker = () => {
-      if (!shiftHoldPickerActiveRef.current) return;
-      const shouldRestorePickerInactive = !pickerWasActiveBeforeShiftHoldRef.current;
-      shiftHoldPickerActiveRef.current = false;
-      pickerWasActiveBeforeShiftHoldRef.current = false;
-      if (shouldRestorePickerInactive) {
+      if (!altHoldPickerActiveRef.current) return;
+      const shouldRestoreInactive = !pickerWasActiveBeforeAltHoldRef.current;
+      altHoldPickerActiveRef.current = false;
+      pickerWasActiveBeforeAltHoldRef.current = false;
+      if (shouldRestoreInactive) {
         dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
       }
     };
@@ -1765,40 +1792,22 @@ function PrismApp() {
       releaseShiftHoldPicker();
     };
 
-    const handleKeydownRecovery = (event) => {
-      if (!shiftHoldPickerActiveRef.current) return;
-      if (event.shiftKey) return;
-      releaseShiftHoldPicker();
-    };
-
-    const handlePointerRecovery = (event) => {
-      if (!shiftHoldPickerActiveRef.current) return;
-      if (event.shiftKey) return;
-      releaseShiftHoldPicker();
-    };
-
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") releaseShiftHoldPicker();
     };
 
     window.addEventListener("keydown", handleShiftHoldKeyDown);
     window.addEventListener("keyup", handleShiftHoldKeyUp);
-    window.addEventListener("keydown", handleKeydownRecovery, true);
-    window.addEventListener("pointerdown", handlePointerRecovery, true);
-    window.addEventListener("pointerup", handlePointerRecovery, true);
     window.addEventListener("blur", releaseShiftHoldPicker);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.removeEventListener("keydown", handleShiftHoldKeyDown);
       window.removeEventListener("keyup", handleShiftHoldKeyUp);
-      window.removeEventListener("keydown", handleKeydownRecovery, true);
-      window.removeEventListener("pointerdown", handlePointerRecovery, true);
-      window.removeEventListener("pointerup", handlePointerRecovery, true);
       window.removeEventListener("blur", releaseShiftHoldPicker);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [dispatchInteraction, isPickerDisabled, isWindowMode, pickerActive]);
+  }, [dispatchInteraction, isEditorModeEnabled, isPickerDisabled, isWindowMode, pickerActive]);
 
   const handleToggleSetting = useCallback((key) => {
     setUiSettings((prev) => ({

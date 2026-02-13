@@ -709,6 +709,7 @@ function syncPatchImportPolling() {
   clearPatchImportPolling();
   if (!autoImportEnabled || aiResponseMode !== "patch") return;
   patchImportPollTimer = setInterval(() => {
+    if (!isAiGenerating) return;
     tryDirectPatchAutoImport("poll");
   }, PATCH_IMPORT_POLL_MS);
 }
@@ -759,10 +760,6 @@ function updateAutoImportObserver() {
 
   responseObserver = new MutationObserver(() => {
     intelligentExtractor?.noteMutation?.();
-    if (tryDirectPatchAutoImport("mutation")) {
-      isAiGenerating = false;
-      return;
-    }
     const sendBtn = findBestSendButtonCandidate();
     if (sendBtn) intelligentExtractor?.registerSendButton?.(sendBtn);
 
@@ -776,8 +773,14 @@ function updateAutoImportObserver() {
         isAiGenerating = true;
         intelligentExtractor?.noteGenerationStart?.();
       }
+    }
+
+    if ((isAiGenerating || isDisabled || stopVisible) && tryDirectPatchAutoImport("mutation")) {
+      isAiGenerating = false;
       return;
     }
+
+    if (isDisabled || stopVisible) return;
 
     if (!isAiGenerating) return;
 
