@@ -4,7 +4,7 @@ export const SHORTCUT_LABELS = Object.freeze({
   send: "Cmd/Ctrl+Enter",
   toggleViewMode: "Cmd/Ctrl+Shift+V",
   togglePicker: "P",
-  pickByClick: "Alt+Click",
+  pickByClick: "Shift+Click",
   clearDraftOnly: "Shift+Backspace",
   deleteMemo: "Cmd/Ctrl+Shift+Backspace",
   clearSelection: "Escape",

@@ -955,16 +955,13 @@ function PrismApp() {
   useEffect(() => {
     if (!ENABLE_PICKER) return undefined;
 
-    const handleAltDown = (event) => {
-      if (event.key !== "Alt") return;
+    const handlePeekModifierDown = (event) => {
+      if (event.key !== "Shift") return;
       if (isPickerDisabled) return;
       setAltPeekActive(true);
     };
-    const handleAltUp = (event) => {
-      if (event.key !== "Alt") return;
-      setAltPeekActive(false);
-    };
-    const clearAltPeek = () => {
+    const handlePeekModifierUp = (event) => {
+      if (event.key !== "Shift") return;
       setAltPeekActive(false);
     };
     const handleVisibilityChange = () => {
@@ -973,15 +970,13 @@ function PrismApp() {
       }
     };
 
-    window.addEventListener("keydown", handleAltDown, true);
-    window.addEventListener("keyup", handleAltUp, true);
-    window.addEventListener("blur", clearAltPeek);
+    window.addEventListener("keydown", handlePeekModifierDown, true);
+    window.addEventListener("keyup", handlePeekModifierUp, true);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      window.removeEventListener("keydown", handleAltDown, true);
-      window.removeEventListener("keyup", handleAltUp, true);
-      window.removeEventListener("blur", clearAltPeek);
+      window.removeEventListener("keydown", handlePeekModifierDown, true);
+      window.removeEventListener("keyup", handlePeekModifierUp, true);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [isPickerDisabled]);
@@ -1041,7 +1036,7 @@ function PrismApp() {
         return;
       }
 
-      if (data.type === "PRISM_ALT_PEEK") {
+      if (data.type === "PRISM_SHIFT_PEEK") {
         const nextActive = Boolean(data.active);
         if (!ENABLE_PICKER || isPickerDisabled) {
           if (!nextActive) {
@@ -1768,9 +1763,10 @@ function PrismApp() {
   useEffect(() => {
     if (isWindowMode) return undefined;
 
-    const handleAltHoldKeyDown = (event) => {
-      if (event.key !== "Alt") return;
+    const handleShiftHoldKeyDown = (event) => {
+      if (event.key !== "Shift") return;
       if (event.repeat) return;
+      if (isEditableTarget(event.target)) return;
       if (!isEditorModeEnabled || isPickerDisabled) return;
       if (altHoldPickerActiveRef.current) return;
 
@@ -1782,7 +1778,7 @@ function PrismApp() {
       }
     };
 
-    const releaseAltHoldPicker = () => {
+    const releaseShiftHoldPicker = () => {
       if (!altHoldPickerActiveRef.current) return;
       const shouldRestoreInactive = !pickerWasActiveBeforeAltHoldRef.current;
       altHoldPickerActiveRef.current = false;
@@ -1792,24 +1788,24 @@ function PrismApp() {
       }
     };
 
-    const handleAltHoldKeyUp = (event) => {
-      if (event.key !== "Alt") return;
-      releaseAltHoldPicker();
+    const handleShiftHoldKeyUp = (event) => {
+      if (event.key !== "Shift") return;
+      releaseShiftHoldPicker();
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") releaseAltHoldPicker();
+      if (document.visibilityState === "hidden") releaseShiftHoldPicker();
     };
 
-    window.addEventListener("keydown", handleAltHoldKeyDown);
-    window.addEventListener("keyup", handleAltHoldKeyUp);
-    window.addEventListener("blur", releaseAltHoldPicker);
+    window.addEventListener("keydown", handleShiftHoldKeyDown);
+    window.addEventListener("keyup", handleShiftHoldKeyUp);
+    window.addEventListener("blur", releaseShiftHoldPicker);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      window.removeEventListener("keydown", handleAltHoldKeyDown);
-      window.removeEventListener("keyup", handleAltHoldKeyUp);
-      window.removeEventListener("blur", releaseAltHoldPicker);
+      window.removeEventListener("keydown", handleShiftHoldKeyDown);
+      window.removeEventListener("keyup", handleShiftHoldKeyUp);
+      window.removeEventListener("blur", releaseShiftHoldPicker);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [dispatchInteraction, isEditorModeEnabled, isPickerDisabled, isWindowMode, pickerActive]);
