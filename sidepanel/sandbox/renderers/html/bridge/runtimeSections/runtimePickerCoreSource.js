@@ -681,6 +681,10 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
           refreshPickerDebugOverlay("pointer-refresh-while-inactive", null);
           return;
         }
+        if (canPreviewByShift && !prismPickerActive) {
+          ensurePickerPointerStyles();
+          ensurePickerHoverStyles();
+        }
         if (!prismPointerInside) {
           invalidatePickerPointerState();
           return;
