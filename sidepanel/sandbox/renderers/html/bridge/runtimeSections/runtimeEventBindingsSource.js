@@ -1,12 +1,14 @@
 export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
       document.addEventListener("mousemove", function(event) {
-        if (!prismPickerActive) return;
         if (isDebugOverlayEventTarget(event.target)) return;
+        if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+          prismPointerInside = true;
+          prismPointerClientX = event.clientX;
+          prismPointerClientY = event.clientY;
+        }
+        if (!prismPickerActive) return;
         event.stopPropagation();
         event.stopImmediatePropagation();
-        prismPointerInside = true;
-        prismPointerClientX = event.clientX;
-        prismPointerClientY = event.clientY;
         if (typeof requestPickerPointerRefresh === "function") {
           requestPickerPointerRefresh(false);
         } else {
