@@ -447,7 +447,7 @@ stage.style.position = "relative";
 stage.style.boxSizing = "border-box";
 applyInlineStyles(stage, data.rootStyles);
 stage.innerHTML = data.html;
-stage.querySelectorAll("[data-prism-picker-overlay='true'], [data-prism-svg-instruction-proxy='true']").forEach((el) => {
+stage.querySelectorAll("[data-prism-picker-overlay='true'], [data-prism-picker-hover-proxy='true'], [data-prism-svg-instruction-proxy='true']").forEach((el) => {
 el.remove();
 });
 stage.querySelectorAll(".prism-has-instruction, .prism-has-instruction--background, .prism-has-instruction--svg, .prism-has-instruction--picker-focus").forEach((el) => {

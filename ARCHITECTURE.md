@@ -55,7 +55,7 @@ srcdoc bridge 문자열과 HTML 렌더 주입을 담당하며, DOM 픽킹/하이
 `sidepanel/sandbox/renderers/html/htmlRenderer.js`가 `htmlBridgeAssets.js`의 srcdoc script를 주입하고, picker/marker/navigation/capture를 처리.
 
 7. 메모 입력/수정  
-picker 선택 시 `PRISM_PICKER_SELECT`가 App으로 올라오고, `FloatingInput`에서 저장하면 `instructions[line] = memo`.
+picker 선택 시 `PRISM_PICKER_SELECT`가 App으로 올라오고, 하단 `CommandBar`에서 저장하면 `instructions[line] = memo`.
 
 8. Notes 목록 탐색  
 `NotesIsland` hover 시 preview line 전달, click 시 `PRISM_INSTRUCTION_NAVIGATE`로 해당 요소 스크롤 + 편집 진입.
@@ -143,10 +143,9 @@ picker 선택 시 `PRISM_PICKER_SELECT`가 App으로 올라오고, `FloatingInpu
 - hover 확장/닫힘 타이머, click pin, 전체삭제 confirm, 행별 삭제를 담당합니다.
 - hover 중인 line을 App에 전달해 프리뷰 하이라이트를 유도합니다.
 
-### `sidepanel/src/features/workspace/components/FloatingInput.jsx`
+### `sidepanel/src/features/workspace/components/CommandBar.jsx`
 
-- 선택 요소 기준 편집 카드 렌더.
-- 배경 타겟(뷰어 90% 이상)인 경우 우하단 고정 배치 정책을 사용합니다.
+- 하단 가상 바에서 메모 입력/저장/삭제를 담당합니다.
 
 ### `sidepanel/sandbox/core/runtime.js`
 

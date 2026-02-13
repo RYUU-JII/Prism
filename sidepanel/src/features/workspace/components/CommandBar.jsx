@@ -73,6 +73,9 @@ const CommandBar = ({
     }
   };
 
+  const baseHint = hasSelection ? "Enter 저장 / Shift+Enter 줄바꿈" : "요소 선택 대기중";
+  const hintText = baseHint;
+
   return (
     <div className={`panel-shell__command-bar ${sendFxActive ? "is-send-fx" : ""}`}>
       <div className="panel-shell__command-energy" aria-hidden="true" />
@@ -99,8 +102,9 @@ const CommandBar = ({
           <span className={`panel-shell__command-line ${hasSelection ? "is-selected" : ""}`}>
             {hasSelection ? `Line ${selectedLine}` : "No target"}
           </span>
-          {hasSelection && (
-            <div className="panel-shell__command-actions">
+          <div className="panel-shell__command-actions">
+            {hasSelection && (
+              <>
               {hasExistingMemo && (
                 <button
                   type="button"
@@ -117,8 +121,9 @@ const CommandBar = ({
               >
                 Clear
               </button>
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </div>
         <textarea
           ref={inputRef}
@@ -137,9 +142,7 @@ const CommandBar = ({
           disabled={inputLocked}
         />
         <div className="panel-shell__command-bottom">
-          <span className="panel-shell__command-hint">
-            {hasSelection ? "Enter 저장 / Shift+Enter 줄바꿈" : "요소 선택 대기중"}
-          </span>
+          <span className="panel-shell__command-hint">{hintText}</span>
           <button
             type="button"
             className="panel-shell__command-submit"

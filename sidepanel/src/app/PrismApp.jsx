@@ -6,7 +6,7 @@ import NotesIsland from '../features/workspace/components/NotesIsland.jsx';
 import ExpertEditor from '../features/workspace/components/ExpertEditor.jsx';
 import { performCaptureInParent } from '../shared/utils/capture.js';
 import { useToast } from '../shared/hooks/useToast.jsx';
-import { buildExportPrompt } from '../core/prompt/promptComposer.js';
+import { buildCodeFingerprint, buildExportPrompt } from '../core/prompt/promptComposer.js';
 import {
   PATCH_FULL_SYNC_CADENCE_OPTIONS,
   UI_SETTINGS_KEY,
@@ -860,9 +860,14 @@ function PrismApp() {
 
       if (data.type === "PRISM_PICKER_SELECT") {
         if (!ENABLE_PICKER) return;
+        const line = Number(data.line) || 1;
+        if (Number(activeInstructionLine) === line) {
+          dispatchInteraction({ type: "CLEAR_SELECTION" });
+          return;
+        }
         dispatchInteraction({
           type: "PICKER_SELECT",
-          line: data.line,
+          line,
           rect: data.rect || null,
           keepPickerActiveAfterSelect: uiSettings.keepPickerActiveAfterSelect,
         });
@@ -924,7 +929,7 @@ function PrismApp() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [pickerActive, returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
+  }, [activeInstructionLine, pickerActive, returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
 
   const handleSnapshot = useCallback((action = "download") => {
     const viewer = viewerRef.current;
@@ -1091,7 +1096,7 @@ function PrismApp() {
 
     if (!payload?.code) return false;
     if (entries.length === 0) {
-      if (!silentWhenNoMemo) showToast("먼저 요소에 메모를 남겨주세요.");
+      if (!silentWhenNoMemo) showToast("메모를 남겨주세요.");
       return false;
     }
 
@@ -1210,6 +1215,24 @@ function PrismApp() {
       const reason = String(message.reason || "unknown");
       const expectedBase = String(message.expectedBase || "");
       const currentBase = String(message.currentBase || "");
+      const snapshotForStaleCheck = lastExportSnapshotRef.current;
+      if (
+        reason === "base_mismatch" &&
+        snapshotForStaleCheck?.baseFingerprint &&
+        expectedBase &&
+        currentBase &&
+        snapshotForStaleCheck.baseFingerprint === expectedBase &&
+        currentBase !== expectedBase
+      ) {
+        const liveCode = String(latestPayloadRef.current?.code || "");
+        if (liveCode) {
+          const liveFingerprint = buildCodeFingerprint(liveCode);
+          if (liveFingerprint === currentBase) {
+            // Old patch was re-detected after it had already been applied.
+            return;
+          }
+        }
+      }
       const rejectKey = `${reason}|${expectedBase}|${currentBase}`;
       const now = Date.now();
       if (
@@ -1414,11 +1437,8 @@ function PrismApp() {
               onSnapshot={() => handleSnapshot("download")}
               onCopy={() => handleSnapshot("clipboard")}
               onOpenWindow={handleOpenWindow}
-              onExportPrompt={handleExportPrompt}
               isSnapshotDisabled={isSnapshotDisabled}
               isFreezeDisabled={isFreezeDisabled}
-              isExportPromptDisabled={isExportPromptDisabled}
-              instructionCount={instructionCount}
               canvasFrozen={canvasFrozen}
               onFreezeToggle={handleFreezeToggle}
               uiSettings={uiSettings}

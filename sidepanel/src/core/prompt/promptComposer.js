@@ -12,6 +12,10 @@ function buildCodeFingerprint(code) {
   return `${lineCount}L-${hashHex}`;
 }
 
+function normalizeCodeForPrompt(code) {
+  return String(code || "").replace(/\r\n?/g, "\n");
+}
+
 function evaluateEditComplexity(payload, instructionEntries) {
   const entries = Array.isArray(instructionEntries) ? instructionEntries : [];
   const lines = Array.from(
@@ -61,7 +65,7 @@ function evaluateEditComplexity(payload, instructionEntries) {
 
   const language = String(payload?.language || "").toLowerCase();
   if (language === "html") {
-    const codeLines = String(payload?.code || "").split("\n");
+    const codeLines = normalizeCodeForPrompt(payload?.code || "").split("\n");
     const structuralRe = /<\s*\/?\s*(html|head|body|style|script|header|nav|main|footer|section|article|aside|form|table|ul|ol|li)\b/i;
     let structuralHits = 0;
 
@@ -136,12 +140,13 @@ function buildExportPrompt({
     }
   }
 
-  const codeLines = String(safePayload.code || "").split("\n");
+  const normalizedCode = normalizeCodeForPrompt(safePayload.code || "");
+  const codeLines = normalizedCode.split("\n");
   const promptLevel = 3;
   const isPatchMode = resolvedResponseMode === "patch";
 
   let codeLabel = safePayload.language || "text";
-  let codeBody = safePayload.code;
+  let codeBody = normalizedCode;
   if (isPatchMode) {
     codeLabel = `${codeLabel} (full-numbered)`;
     codeBody = codeLines.map((line, index) => `${index + 1}|${line}`).join("\n");

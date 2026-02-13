@@ -34,6 +34,7 @@ let lastPatchCandidateSignature = "";
 let pendingPatchCandidateSignature = "";
 let pendingPatchCandidateText = "";
 let pendingPatchCandidateSeenAt = 0;
+let lastAppliedPatchSignature = "";
 const intelligentExtractor =
   window.PrismIntelligentExtractor && typeof window.PrismIntelligentExtractor.create === "function"
     ? window.PrismIntelligentExtractor.create({ host: window.location.host })
@@ -299,21 +300,45 @@ function notifyPatchApplyRejected(reason, details = {}) {
   });
 }
 
+function buildPatchPayloadSignature(parsed) {
+  if (!parsed || !Array.isArray(parsed.patches)) return "";
+  const normalizedPatches = parsed.patches.map((patch) => ({
+    s: Number(patch?.start),
+    e: Number(patch?.end),
+    r: String(patch?.replacement || ""),
+  }));
+  const source = JSON.stringify({
+    b: String(parsed.baseFingerprint || ""),
+    p: normalizedPatches,
+  });
+  return buildCodeFingerprint(source);
+}
+
 function tryApplySmartPatchPayload(text) {
   if (aiResponseMode !== "patch") return false;
   const source = String(text || "");
   const hasPatchTag = /<\s*prism-patch\b/i.test(source) || /&lt;\s*prism-patch\b/i.test(source);
   if (!hasPatchTag) return false;
+  const hasCompletePayload = hasCompletePatchPayload(source);
 
   const parsed = parsePrismPatches(source);
   if (parsed.kind === "none") return false;
   if (parsed.kind === "invalid") {
+    if (!hasCompletePayload) {
+      console.log("[Prism] Smart Patch candidate is incomplete. Waiting for full payload.");
+      return true;
+    }
     console.warn("[Prism] Smart Patch ignored: invalid patch payload.");
     notifyPatchApplyRejected("invalid_patch");
     return true;
   }
   if (parsed.kind === "no_change") {
     console.log("[Prism] Smart Patch payload indicates no changes.");
+    return true;
+  }
+  const patchSignature = buildPatchPayloadSignature(parsed);
+  if (patchSignature && patchSignature === lastAppliedPatchSignature) {
+    console.log("[Prism] Smart Patch duplicate ignored.");
     return true;
   }
 
@@ -372,6 +397,9 @@ function tryApplySmartPatchPayload(text) {
       return;
     }
 
+    if (patchSignature) {
+      lastAppliedPatchSignature = patchSignature;
+    }
     console.log(`[Prism] Smart Patch applied (${applied.patchCount} patches).`);
   });
 

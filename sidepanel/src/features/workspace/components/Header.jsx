@@ -11,11 +11,8 @@ const Header = ({
   onSnapshot,
   onCopy,
   onOpenWindow,
-  onExportPrompt,
   isSnapshotDisabled,
   isFreezeDisabled,
-  isExportPromptDisabled,
-  instructionCount,
   canvasFrozen,
   onFreezeToggle,
   uiSettings,
@@ -39,7 +36,6 @@ const Header = ({
   const retryFullSyncOnReject = uiSettings?.retryFullSyncOnReject === true;
   const adaptiveResponseRouting = uiSettings?.adaptiveResponseRouting !== false;
   const showTooltips = uiSettings?.showTooltips !== false;
-  const responseModeLabel = uiSettings?.aiResponseMode === "full" ? "Full Code" : "Smart Patch";
   const activeThemeMode =
     themeMode === "light" || themeMode === "dark" ? themeMode : "detect";
   const indicatorMessage =
@@ -117,43 +113,6 @@ const Header = ({
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5ZM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5Zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3Z" />
         </svg>
-      ),
-    },
-    {
-      id: "freeze",
-      title: canvasFrozen ? "Unfreeze" : "Freeze",
-      tooltip: canvasFrozen ? "Unfreeze page" : "Freeze page",
-      action: onFreezeToggle,
-      disabled: Boolean(isFreezeDisabled),
-      icon: (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M15 2H9v2h6V2ZM11 14.5h2V7h-2v7.5Zm4.07-3.57 1.42-1.42A8.962 8.962 0 0 0 12 7V5.07C16.93 5.54 21 9.91 21 15.1c0 5.52-4.48 10-10 10S1 20.62 1 15.1c0-2.32.79-4.46 2.12-6.16l1.42 1.42a6.974 6.974 0 0 1-1.54 4.74h17.14c-.04-1.78-.6-3.41-1.54-4.74Z" />
-        </svg>
-      ),
-    },
-    {
-      id: "copyPrompt",
-      title: "Copy Prompt",
-      tooltip: `Copy ${responseModeLabel} Prompt`,
-      action: onExportPrompt,
-      disabled: Boolean(isExportPromptDisabled),
-      extraClass: "panel-shell__action--export",
-      icon: (
-        <>
-          <svg
-            className="panel-shell__export-stars"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            shapeRendering="geometricPrecision"
-          >
-            <path d="M8.2 2.6 10 7.2 14.6 9 10 10.8 8.2 15.4 6.4 10.8 1.8 9 6.4 7.2Z" />
-            <path d="M17.2 2.7 18.2 5.3 20.8 6.3 18.2 7.3 17.2 9.9 16.2 7.3 13.6 6.3 16.2 5.3Z" />
-            <path d="M17.8 12.9 18.6 15 20.7 15.8 18.6 16.6 17.8 18.7 17 16.6 14.9 15.8 17 15Z" />
-          </svg>
-          {instructionCount > 0 && (
-            <span className="action-count-badge">{instructionCount}</span>
-          )}
-        </>
       ),
     },
   ];
@@ -300,10 +259,6 @@ const Header = ({
                 </div>
               )}
             </div>
-
-            {renderToolbarButton(coreButtonDefs[2], {
-              disabled: settingsOpen || isFreezeDisabled,
-            })}
 
             <button
               ref={settingsToggleRef}
