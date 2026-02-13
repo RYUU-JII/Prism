@@ -361,7 +361,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
       }
 
       function resolvePickerVisualState(target) {
-        if (!prismPickerActive) return createIdlePickerVisualState();
+        if (!prismPickerActive && !prismShiftKeyDown) return createIdlePickerVisualState();
         const hoverState = resolvePickerHoverState(target);
         if (!hoverState || !hoverState.visualTarget) {
           return createIdlePickerVisualState();
