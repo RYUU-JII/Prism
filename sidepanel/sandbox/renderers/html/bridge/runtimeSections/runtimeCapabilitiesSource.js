@@ -1,4 +1,4 @@
-export const SNAPSHOT_RUNTIME_CAPABILITIES_SOURCE = String.raw`
+export const SNAPSHOT_RUNTIME_CAPABILITIES_SOURCE = `
       function scriptMentionsThree(text) {
         if (!text) return false;
         const lowered = String(text).toLowerCase();
@@ -112,6 +112,10 @@ export const SNAPSHOT_RUNTIME_CAPABILITIES_SOURCE = String.raw`
             typeof safe.keepPickerActiveAfterSelect === "boolean"
               ? safe.keepPickerActiveAfterSelect
               : true,
+          debugPickerOverlay:
+            typeof safe.debugPickerOverlay === "boolean"
+              ? safe.debugPickerOverlay
+              : false,
           captureRange,
           highlightStrength,
           highlightColor

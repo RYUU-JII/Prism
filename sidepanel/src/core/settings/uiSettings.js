@@ -9,6 +9,7 @@ const DEFAULT_UI_SETTINGS = {
   themeMode: "detect",
   lockInteractionsWhenPaused: true,
   showTooltips: true,
+  debugPickerOverlay: false,
   captureRange: "visible",
   memoResetPolicy: "on_copy",
   keepPickerActiveAfterSelect: true,
@@ -114,6 +115,10 @@ function loadUiSettings() {
           : typeof parsed?.hideHintOverlay === "boolean"
             ? !parsed.hideHintOverlay
             : DEFAULT_UI_SETTINGS.showTooltips,
+      debugPickerOverlay:
+        typeof parsed?.debugPickerOverlay === "boolean"
+          ? parsed.debugPickerOverlay
+          : DEFAULT_UI_SETTINGS.debugPickerOverlay,
       captureRange,
       memoResetPolicy,
       keepPickerActiveAfterSelect:

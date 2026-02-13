@@ -36,6 +36,7 @@ const Header = ({
   const retryFullSyncOnReject = uiSettings?.retryFullSyncOnReject === true;
   const adaptiveResponseRouting = uiSettings?.adaptiveResponseRouting !== false;
   const showTooltips = uiSettings?.showTooltips !== false;
+  const debugPickerOverlay = uiSettings?.debugPickerOverlay === true;
   const activeThemeMode =
     themeMode === "light" || themeMode === "dark" ? themeMode : "detect";
   const indicatorMessage =
@@ -83,6 +84,18 @@ const Header = ({
   }, [settingsOpen]);
 
   const coreButtonDefs = [
+    {
+      id: "pickerDebugOverlay",
+      title: debugPickerOverlay ? "Disable Picker Debug" : "Enable Picker Debug",
+      tooltip: debugPickerOverlay ? "Picker Debug: On" : "Picker Debug: Off",
+      action: () => onToggleSetting?.("debugPickerOverlay"),
+      extraClass: `panel-shell__action--debug ${debugPickerOverlay ? "panel-shell__action--active" : ""}`,
+      icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 8h-2.81a5 5 0 0 0-9.38 0H5a2 2 0 0 0-2 2v2h2v3a4 4 0 0 0 4 4h1v2h4v-2h1a4 4 0 0 0 4-4v-3h2v-2a2 2 0 0 0-2-2Zm-7-3a3 3 0 0 1 2.82 2h-5.64A3 3 0 0 1 13 5Zm4 10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-3h10v3Zm-6-1h4v2h-4v-2Z" />
+        </svg>
+      ),
+    },
     {
       id: "playPause",
       title: canvasFrozen ? "Resume Playback" : "Pause Playback",
@@ -226,7 +239,7 @@ const Header = ({
       <div className="panel-shell__bar-main panel-shell__bar-main--two-sector">
         <div className="panel-shell__sector panel-shell__sector--core">
           <div className="panel-shell__actions panel-shell__actions--core">
-            {coreButtonDefs.slice(0, 2).map((item) =>
+            {coreButtonDefs.map((item) =>
               renderToolbarButton(item, {
                 disabled: settingsOpen,
               })

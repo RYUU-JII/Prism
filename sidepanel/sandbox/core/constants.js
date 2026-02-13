@@ -1,6 +1,7 @@
 export const DEFAULT_UI_SETTINGS = Object.freeze({
   lockInteractionsWhenPaused: true,
   keepPickerActiveAfterSelect: true,
+  debugPickerOverlay: false,
   captureRange: "visible",
   memoResetPolicy: "on_code_change",
   pickerHighlight: {
@@ -24,6 +25,10 @@ export function normalizeUiSettings(settings) {
       typeof safe.keepPickerActiveAfterSelect === "boolean"
         ? safe.keepPickerActiveAfterSelect
         : DEFAULT_UI_SETTINGS.keepPickerActiveAfterSelect,
+    debugPickerOverlay:
+      typeof safe.debugPickerOverlay === "boolean"
+        ? safe.debugPickerOverlay
+        : DEFAULT_UI_SETTINGS.debugPickerOverlay,
     captureRange:
       safe.captureRange === "full" || safe.captureRange === "visible"
         ? safe.captureRange

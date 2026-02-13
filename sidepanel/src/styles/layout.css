@@ -266,6 +266,10 @@
   fill: #ff7a3d !important;
 }
 
+.panel-shell__action--debug svg {
+  fill: #0f766e !important;
+}
+
 .panel-shell__action--active {
   background: rgba(20, 184, 166, 0.15) !important;
   border-color: rgba(20, 184, 166, 0.4) !important;
