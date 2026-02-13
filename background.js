@@ -110,7 +110,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // 5. 패널이 최신 데이터를 요청할 때 (GET_LATEST)
   else if (message?.type === "PRISM_GET_LATEST") {
     (async () => {
-      const targetTabId = message.tabId ?? "_global";
+      // FIX: message.tabId가 없으면(content script 요청) sender.tab.id(=tabId)를 사용해야 함.
+      const targetTabId = tabId;
       const { latestByTab = {} } = await chrome.storage.session.get("latestByTab");
       const payload = latestByTab[targetTabId] || { code: "", language: "text", url: "" };
       sendResponse({ ok: true, payload });
