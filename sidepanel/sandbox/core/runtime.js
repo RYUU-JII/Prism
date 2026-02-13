@@ -336,6 +336,11 @@ function captureSnapshot() {
   }
 }
 
+function pushUiStateToIframe(iframeWindow) {
+  if (!iframeWindow) return;
+  iframeWindow.postMessage({ type: "PRISM_UI_STATE", ...uiState }, "*");
+}
+
 // --- [5. Message bridge and bootstrap] ---
 
 window.addEventListener("message", (event) => {
@@ -353,7 +358,17 @@ window.addEventListener("message", (event) => {
     return;
   }
 
+  if (data.type === "PRISM_UI_STATE_REQUEST" && event.source === iframeWindow) {
+    pushUiStateToIframe(iframeWindow);
+    return;
+  }
+
   if (data.type === "PRISM_PICKER_SELECT" && event.source === iframeWindow) {
+    window.parent.postMessage(data, "*");
+    return;
+  }
+
+  if (data.type === "PRISM_PICKER_DEBUG_COPY" && event.source === iframeWindow) {
     window.parent.postMessage(data, "*");
     return;
   }
@@ -397,9 +412,7 @@ window.addEventListener("message", (event) => {
       isViewMode: Boolean(data.isViewMode),
       settings: normalizeUiSettings(data.settings)
     };
-    if (iframeWindow) {
-      iframeWindow.postMessage({ type: "PRISM_UI_STATE", ...uiState }, "*");
-    }
+    pushUiStateToIframe(iframeWindow);
     window.parent.postMessage({
       type: "PRISM_DEVLOG",
       stage: "ui-state-forwarded",

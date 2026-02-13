@@ -1,6 +1,7 @@
-export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = String.raw`
+export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
       document.addEventListener("mousemove", function(event) {
         if (!prismPickerActive) return;
+        if (isDebugOverlayEventTarget(event.target)) return;
         event.stopPropagation();
         event.stopImmediatePropagation();
         prismPointerInside = true;
@@ -33,6 +34,7 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = String.raw`
       ].forEach(function(type) {
         document.addEventListener(type, function(event) {
           if (!prismPickerActive) return;
+          if (isDebugOverlayEventTarget(event.target)) return;
           event.preventDefault();
           event.stopPropagation();
           event.stopImmediatePropagation();
@@ -40,6 +42,21 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = String.raw`
       });
 
       document.addEventListener("click", function(event) {
+        if (isDebugOverlayEventTarget(event.target)) return;
+
+        if (
+          prismDebugOverlayEnabled &&
+          !isEditableDebugTarget(event.target) &&
+          Number.isFinite(event.clientX) &&
+          Number.isFinite(event.clientY)
+        ) {
+          const clickTarget = findTargetAt(event.clientX, event.clientY) || event.target || null;
+          pinPickerDebugSnapshot("click-pin", clickTarget, {
+            x: event.clientX,
+            y: event.clientY
+          });
+        }
+
         if (!prismPickerActive) {
           // Existing memo click behavior.
           const memoEl = event.target.closest && event.target.closest(".prism-has-instruction");
@@ -80,6 +97,20 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = String.raw`
         if (prismPickerHoverProxy && prismPickerHoverProxySource) {
           syncPickerHoverProxy(prismPickerHoverProxySource);
         }
+      }, true);
+
+      document.addEventListener("keydown", function(event) {
+        if (!prismDebugOverlayEnabled) return;
+        if (event.defaultPrevented) return;
+        if (event.altKey || event.ctrlKey || event.metaKey) return;
+        if (isDebugOverlayEventTarget(event.target)) return;
+        const key = String(event.key || "").toLowerCase();
+        if (key !== "c") return;
+        if (isEditableDebugTarget(event.target)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        copyPickerDebugSnapshot("key-c", prismPickerTarget);
       }, true);
 
       document.addEventListener("keydown", function(event) {
@@ -128,6 +159,10 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = String.raw`
         queueRuntimeCapabilities();
       });
       queueRuntimeCapabilities();
+
+      try {
+        parent.postMessage({ type: "PRISM_UI_STATE_REQUEST" }, "*");
+      } catch (err) {}
 
       try {
         parent.postMessage({

@@ -1,4 +1,4 @@
-export const VIEWPORT_POLICY_STYLE_SOURCE = String.raw`
+export const VIEWPORT_POLICY_STYLE_SOURCE = `
       html, body {
         max-width: 100%;
         overflow-x: hidden !important;

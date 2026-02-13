@@ -884,6 +884,23 @@ function PrismApp() {
         return;
       }
 
+      if (data.type === "PRISM_PICKER_DEBUG_COPY") {
+        const text = typeof data.text === "string" ? data.text : "";
+        if (!text) return;
+        const copyPromise =
+          navigator.clipboard && navigator.clipboard.writeText
+            ? navigator.clipboard.writeText(text)
+            : Promise.reject(new Error("clipboard_unavailable"));
+        copyPromise
+          .then(() => {
+            showToast("디버그 스냅샷 복사됨");
+          })
+          .catch(() => {
+            showToast("디버그 스냅샷 복사 실패");
+          });
+        return;
+      }
+
       if (data.type === "PRISM_RUNTIME_CAPABILITIES") {
         const caps = data.capabilities || {};
         setRuntimeCapabilities({
