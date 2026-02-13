@@ -1,4 +1,4 @@
-export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = String.raw`
+export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
       function ensureInstructionStyles() {
         if (prismInstructionStyle) return;
         const style = document.createElement("style");
@@ -316,7 +316,9 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = String.raw`
       }
 
       function shouldUsePickerHoverProxy(target) {
-        return shouldUseSvgInstructionProxy(target);
+        // Hover feedback is most stable when it attaches directly to canvas.
+        // Keep proxy hover for true SVG nodes only.
+        return isSvgTargetElement(target);
       }
 
       function applyMarkers() {
@@ -402,6 +404,7 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = String.raw`
         }
         syncPreviewFocus();
         syncEditingFocus();
+        refreshPickerDebugOverlay("markers-applied", prismPickerTarget);
       }
 
       function setMotionFreeze(active) {
@@ -435,6 +438,7 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = String.raw`
         applyMarkers();
         updateInteractionLock();
         queueRuntimeCapabilities();
+        refreshPickerDebugOverlay("frozen-state-updated", prismPickerTarget);
       }
 
       function isBackgroundLikeTarget(target) {

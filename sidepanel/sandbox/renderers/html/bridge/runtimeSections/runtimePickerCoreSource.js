@@ -1,4 +1,4 @@
-export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
+export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
       function postNavigateMiss(line, reason) {
         try {
           parent.postMessage(
@@ -133,6 +133,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
         if (!target || !target.getAttribute) return true;
         if (target.getAttribute("data-prism-picker-hover-proxy") === "true") return true;
         if (target.getAttribute("data-prism-svg-instruction-proxy") === "true") return true;
+        if (isDebugOverlayEventTarget(target)) return true;
         return false;
       }
 
@@ -314,7 +315,23 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
 
       function applyPickerVisualState(nextState) {
         const next = nextState || createIdlePickerVisualState();
-        if (isSamePickerVisualState(prismPickerVisualState, next)) return;
+        if (isSamePickerVisualState(prismPickerVisualState, next)) {
+          if (next.mode === PICKER_VISUAL_MODE.HOVER && next.hoverTarget) {
+            reconcilePickerHoverTarget(next.hoverTarget);
+          } else if (next.mode === PICKER_VISUAL_MODE.FOCUS_MEMO && next.focusTarget) {
+            if (
+              next.focusTarget.classList &&
+              !next.focusTarget.classList.contains("prism-has-instruction--picker-focus")
+            ) {
+              setPickerFocusedInstruction(next.focusTarget);
+            }
+          }
+          refreshPickerDebugOverlay(
+            "visual-state-reconciled",
+            next.hoverTarget || next.focusTarget || prismPickerTarget
+          );
+          return;
+        }
 
         if (next.mode === PICKER_VISUAL_MODE.FOCUS_MEMO && next.focusTarget) {
           clearPickerHoverTarget();
@@ -328,6 +345,10 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
         }
 
         prismPickerVisualState = next;
+        refreshPickerDebugOverlay(
+          "visual-state-updated",
+          next.hoverTarget || next.focusTarget || prismPickerTarget
+        );
       }
 
       function clearPickerVisualState() {
@@ -455,17 +476,69 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
         }
 
         const useProxy = shouldUsePickerHoverProxy(target);
+        const keepCurrentDirectTarget =
+          !useProxy &&
+          prismPickerHoverTarget === target &&
+          prismPickerHoverTarget.isConnected;
+        const keepCurrentProxyTarget =
+          useProxy &&
+          prismPickerHoverProxy &&
+          prismPickerHoverProxy.isConnected &&
+          prismPickerHoverTarget === prismPickerHoverProxy &&
+          prismPickerHoverProxySource === target;
+        const canReuseCurrentTarget = keepCurrentDirectTarget || keepCurrentProxyTarget;
+
+        // Important: clear previous hover target before creating/syncing proxy.
+        // If we clear after proxy creation, non-proxy -> proxy transition can
+        // remove the just-created proxy and leave visual state without overlay.
+        if (!canReuseCurrentTarget && prismPickerHoverTarget) {
+          clearPickerHoverTarget();
+        }
+
         const markerTarget = useProxy ? syncPickerHoverProxy(target) : target;
         if (!markerTarget) {
           clearPickerHoverTarget();
           return;
         }
-
-        if (prismPickerHoverTarget && prismPickerHoverTarget !== markerTarget) {
-          clearPickerHoverTarget();
-        }
         prismPickerHoverTarget = markerTarget;
         prismPickerHoverTarget.classList.add("prism-picker-hover");
+        prismPickerHoverTarget.classList.toggle(
+          "prism-picker-hover--background",
+          isBackgroundLikeTarget(target)
+        );
+      }
+
+      function reconcilePickerHoverTarget(target) {
+        if (!target || !target.classList) return;
+        const useProxy = shouldUsePickerHoverProxy(target);
+        if (useProxy) {
+          const proxyMissing = !prismPickerHoverProxy || !prismPickerHoverProxy.isConnected;
+          const wrongSource = prismPickerHoverProxySource !== target;
+          const wrongHoverTarget = prismPickerHoverTarget !== prismPickerHoverProxy;
+          const missingHoverClass =
+            !prismPickerHoverProxy ||
+            !prismPickerHoverProxy.classList ||
+            !prismPickerHoverProxy.classList.contains("prism-picker-hover");
+          if (proxyMissing || wrongSource || wrongHoverTarget || missingHoverClass) {
+            setPickerHoverTarget(target);
+            return;
+          }
+          syncPickerHoverProxy(target);
+          prismPickerHoverProxy.classList.add("prism-picker-hover");
+          prismPickerHoverProxy.classList.toggle(
+            "prism-picker-hover--background",
+            isBackgroundLikeTarget(target)
+          );
+          return;
+        }
+
+        const missingHoverClass =
+          !target.classList || !target.classList.contains("prism-picker-hover");
+        const wrongHoverTarget = prismPickerHoverTarget !== target;
+        if (missingHoverClass || wrongHoverTarget) {
+          setPickerHoverTarget(target);
+          return;
+        }
         prismPickerHoverTarget.classList.toggle(
           "prism-picker-hover--background",
           isBackgroundLikeTarget(target)
@@ -478,10 +551,14 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
         prismPointerClientY = null;
         prismPickerTarget = null;
         clearPickerHoverFeedback();
+        refreshPickerDebugOverlay("pointer-invalidated", null);
       }
 
       function refreshPickerTargetFromPointer(forceUpdate) {
-        if (!prismPickerActive) return;
+        if (!prismPickerActive) {
+          refreshPickerDebugOverlay("pointer-refresh-while-inactive", null);
+          return;
+        }
         if (!prismPointerInside) {
           invalidatePickerPointerState();
           return;
@@ -496,13 +573,16 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
           return;
         }
         if (prismPickerTarget === nextTarget && !forceUpdate) {
-          if (prismPickerHoverProxy && prismPickerHoverProxySource === nextTarget) {
-            syncPickerHoverProxy(nextTarget);
-          }
+          // Even when the pointer stays on the same element, visual state can be
+          // cleared by external state transitions (edit/preview/freeze updates).
+          // Re-run visual resolution so hover/proxy feedback can recover.
+          refreshPickerVisualState(nextTarget);
+          refreshPickerDebugOverlay("pointer-stable-refresh", nextTarget);
           return;
         }
         prismPickerTarget = nextTarget;
         refreshPickerVisualState(nextTarget);
+        refreshPickerDebugOverlay("pointer-target-updated", nextTarget);
       }
 
       function stopPickerTracking() {
@@ -655,6 +735,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
               }, "*");
             } catch (err) {}
             queueRuntimeCapabilities();
+            refreshPickerDebugOverlay("picker-unsupported", null);
             return;
           }
         }
@@ -675,6 +756,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
         syncPreviewFocus();
         updateInteractionLock();
         queueRuntimeCapabilities();
+        refreshPickerDebugOverlay("picker-active-changed", prismPickerTarget);
       }
 
       function applyUiState(nextState) {
@@ -682,6 +764,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
         const previewLine = Number(safeState.previewLine);
         const editingLine = Number(safeState.editingLine);
         prismSettings = normalizeSettings(safeState.settings);
+        setPickerDebugOverlayEnabled(prismSettings.debugPickerOverlay);
         applyVisualSettings();
         prismViewMode = Boolean(safeState.isViewMode);
         prismInstructions = safeState.instructions || {};
@@ -700,13 +783,30 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
         setPickerActive(Boolean(safeState.pickerActive));
         setFrozen(Boolean(safeState.frozen));
         queueRuntimeCapabilities();
+        refreshPickerDebugOverlay("ui-state-applied", prismPickerTarget);
       }
 
       function findTargetAt(x, y) {
         const elements = document.elementsFromPoint(x, y);
-        if (!elements || elements.length === 0) return null;
+        if (!elements || elements.length === 0) {
+          setPickerTargetResolutionDebug({
+            x: roundDebugNumber(x, 1),
+            y: roundDebugNumber(y, 1),
+            branch: "empty-elements-from-point",
+            selected: null
+          });
+          return null;
+        }
         const pickableElements = elements.filter(el => Boolean(el));
-        if (pickableElements.length === 0) return null;
+        if (pickableElements.length === 0) {
+          setPickerTargetResolutionDebug({
+            x: roundDebugNumber(x, 1),
+            y: roundDebugNumber(y, 1),
+            branch: "empty-pickable-elements",
+            selected: null
+          });
+          return null;
+        }
 
         const primaryTarget = pickPrimaryLineCandidate(pickableElements, x, y);
         if (primaryTarget) {
@@ -727,9 +827,32 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
               x,
               y
             );
-            if (refinedTarget) return refinedTarget;
+            if (refinedTarget) {
+              setPickerTargetResolutionDebug({
+                x: roundDebugNumber(x, 1),
+                y: roundDebugNumber(y, 1),
+                branch: "refined-smaller-inner",
+                selected: describeDebugElement(refinedTarget, true),
+                primary: describeDebugElement(primaryTarget, true),
+                topCandidates: pickableElements
+                  .slice(0, 8)
+                  .map(function(el) { return describeDebugElement(el, true); })
+                  .filter(Boolean)
+              });
+              return refinedTarget;
+            }
           }
 
+          setPickerTargetResolutionDebug({
+            x: roundDebugNumber(x, 1),
+            y: roundDebugNumber(y, 1),
+            branch: "primary-line-candidate",
+            selected: describeDebugElement(primaryTarget, true),
+            topCandidates: pickableElements
+              .slice(0, 8)
+              .map(function(el) { return describeDebugElement(el, true); })
+              .filter(Boolean)
+          });
           return primaryTarget;
         }
 
@@ -737,9 +860,29 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = String.raw`
         for (const el of pickableElements) {
           if (el === document.documentElement || el === document.body) continue;
           if (shouldSkipPickerElement(el)) continue;
+          setPickerTargetResolutionDebug({
+            x: roundDebugNumber(x, 1),
+            y: roundDebugNumber(y, 1),
+            branch: "fallback-first-visible",
+            selected: describeDebugElement(el, true),
+            topCandidates: pickableElements
+              .slice(0, 8)
+              .map(function(node) { return describeDebugElement(node, true); })
+              .filter(Boolean)
+          });
           return el;
         }
 
+        setPickerTargetResolutionDebug({
+          x: roundDebugNumber(x, 1),
+          y: roundDebugNumber(y, 1),
+          branch: "fallback-first-raw",
+          selected: describeDebugElement(pickableElements[0] || null, true),
+          topCandidates: pickableElements
+            .slice(0, 8)
+            .map(function(node) { return describeDebugElement(node, true); })
+            .filter(Boolean)
+        });
         return pickableElements[0] || null;
       }
 
