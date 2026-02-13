@@ -11,6 +11,29 @@
   function create(options = {}) {
     const intelligentExtractor = options.intelligentExtractor || null;
 
+    function isLikelySidebarControl(el) {
+      if (!el || !(el instanceof Element)) return false;
+      const hint = [
+        el.getAttribute("aria-label"),
+        el.getAttribute("title"),
+        el.getAttribute("data-testid"),
+        el.className,
+        el.textContent,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return /(sidebar|drawer|history|menu|panel|nav|toggle|collapse|expand|사이드바|메뉴|탐색)/i.test(hint);
+    }
+
+    function resolveGeminiComposerRoot() {
+      const input =
+        document.querySelector(".ql-editor") ||
+        document.querySelector('div[contenteditable="true"][role="textbox"]') ||
+        document.querySelector('div[contenteditable="true"]');
+      return input?.closest("form, [role='form'], [class*='input'], [class*='composer'], [class*='prompt']") || input?.parentElement || null;
+    }
+
     function findBestInputCandidate() {
       const learned = intelligentExtractor?.findBestInput?.();
       if (learned) return learned;
@@ -28,6 +51,7 @@
       if (host.includes("gemini.google.com")) {
         return (
           document.querySelector(".ql-editor") ||
+          document.querySelector('div[contenteditable="true"][role="textbox"]') ||
           document.querySelector('div[contenteditable="true"]')
         );
       }
@@ -49,7 +73,18 @@
 
       const host = window.location.host;
       if (host.includes("gemini.google.com")) {
-        return document.querySelector(".send-button");
+        const composerRoot = resolveGeminiComposerRoot();
+        const geminiCandidates = [
+          ...(composerRoot ? Array.from(composerRoot.querySelectorAll("button")) : []),
+          ...Array.from(document.querySelectorAll("button[aria-label*='send' i], button[aria-label*='전송'], button[aria-label*='보내기'], button.send-button")),
+        ];
+        for (let i = geminiCandidates.length - 1; i >= 0; i -= 1) {
+          const candidate = geminiCandidates[i];
+          if (!isElementVisible(candidate)) continue;
+          if (isLikelySidebarControl(candidate)) continue;
+          return candidate;
+        }
+        return null;
       }
       if (host.includes("claude.ai")) {
         return document.querySelector('button[aria-label*="Send"], button[aria-label*="전송"]');
