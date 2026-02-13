@@ -501,6 +501,37 @@ function extractCodeFenceCandidate(text) {
   return best;
 }
 
+function scoreAssistantLikeNode(node, index = 0) {
+  if (!node || !(node instanceof Element)) return -Infinity;
+  let score = 0;
+  const hint = [
+    node.getAttribute("aria-label"),
+    node.getAttribute("data-testid"),
+    node.className,
+    node.textContent,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (chatInjector?.isElementVisible?.(node)) score += 8;
+  if (/(assistant|model|response|reply|gemini|claude|chatgpt)/i.test(hint)) score += 10;
+  if (/(sidebar|drawer|history|menu|nav|탐색|메뉴|사이드바)/i.test(hint)) score -= 16;
+
+  const preCount = node.querySelectorAll("pre").length;
+  const codeCount = node.querySelectorAll("code").length;
+  if (preCount > 0) score += Math.min(18, preCount * 6);
+  if (codeCount > 0) score += Math.min(12, codeCount * 3);
+
+  const text = String(node.innerText || "").trim();
+  if (/```|<\s*prism-patches?\b|<\/?(html|div|section|main|script|style)\b|import\s+.*\s+from|export\s+default|function\s+\w+|class\s+\w+/i.test(text)) {
+    score += 14;
+  }
+
+  score += Math.min(5, index / 60);
+  return score;
+}
+
 function extractLatestAssistantTextCandidate() {
   const learned = intelligentExtractor?.extractAssistantTextCandidate?.();
   if (learned) return String(learned).slice(-ASSISTANT_TEXT_LIMIT);
@@ -514,13 +545,20 @@ function extractLatestAssistantTextCandidate() {
     "[class*='assistant']",
     "main",
   ];
+  const candidates = [];
   for (const selector of selectors) {
     const nodes = document.querySelectorAll(selector);
-    for (let i = nodes.length - 1; i >= 0; i -= 1) {
-      const text = nodes[i]?.innerText || "";
+    for (let i = 0; i < nodes.length; i += 1) {
+      const node = nodes[i];
+      const text = node?.innerText || "";
       if (!text || text.trim().length < 8) continue;
-      return text.slice(-ASSISTANT_TEXT_LIMIT);
+      candidates.push({ text, score: scoreAssistantLikeNode(node, i) });
     }
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  if (candidates.length > 0) {
+    return String(candidates[0].text || "").slice(-ASSISTANT_TEXT_LIMIT);
   }
   return "";
 }
