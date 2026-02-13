@@ -3,17 +3,46 @@ import { DEFAULT_UI_SETTINGS } from "../settings/uiSettings.js";
 function buildCodeFingerprint(code) {
   const source = String(code || "").replace(/\r\n?/g, "\n");
   let hash = 2166136261;
+  let lineCount = source ? 1 : 0;
   for (let i = 0; i < source.length; i += 1) {
-    hash ^= source.charCodeAt(i);
+    const ch = source.charCodeAt(i);
+    hash ^= ch;
     hash = Math.imul(hash, 16777619);
+    if (ch === 10) lineCount += 1;
   }
-  const lineCount = source ? source.split("\n").length : 0;
   const hashHex = (hash >>> 0).toString(16).padStart(8, "0");
   return `${lineCount}L-${hashHex}`;
 }
 
 function normalizeCodeForPrompt(code) {
   return String(code || "").replace(/\r\n?/g, "\n");
+}
+
+function normalizeMemoForRequest(text) {
+  return String(text || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\n/g, "\\n")
+    .trim();
+}
+
+function normalizeInstructionTokenForRequest(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return "";
+  if (!/^[A-Za-z0-9:_-]{1,64}$/.test(raw)) return "";
+  return raw;
+}
+
+function normalizeSourceLineForRequest(text) {
+  const raw = String(text || "").replace(/\r\n?/g, "\n").trim();
+  if (!raw) return "";
+  const compact = raw.replace(/\s+/g, " ").trim();
+  const maxLength = 240;
+  if (compact.length <= maxLength) return compact;
+  return `${compact.slice(0, maxLength)}...`;
+}
+
+function toQuotedPromptField(value) {
+  return JSON.stringify(String(value || ""));
 }
 
 function evaluateEditComplexity(payload, instructionEntries) {
@@ -99,6 +128,7 @@ function buildExportPrompt({
   settings,
   forceFullSync = false,
   recoveryHint = "",
+  activeSelection = null,
 }) {
   const safePayload = payload && typeof payload === "object" ? payload : null;
   const safeEntries = Array.isArray(instructionEntries) ? instructionEntries : [];
@@ -155,6 +185,9 @@ function buildExportPrompt({
   }
 
   const baseFingerprint = buildCodeFingerprint(safePayload.code);
+  const activeLine = Number(activeSelection?.line);
+  const activeToken = normalizeInstructionTokenForRequest(activeSelection?.token);
+  const hasActiveSelection = Number.isFinite(activeLine) && activeLine > 0;
   let prompt = "";
   prompt += `[SRC] ${safePayload.url || "Unknown"}\n`;
   prompt += `[BASE] ${baseFingerprint}\n`;
@@ -162,9 +195,24 @@ function buildExportPrompt({
   prompt += `[CURRENT_SOURCE_OF_TRUTH ${codeLabel}]\n${codeBody}\n[/CURRENT_SOURCE_OF_TRUTH]\n`;
   prompt += "[REQUEST]\n";
   safeEntries.forEach((entry) => {
-    prompt += `L${entry.line}:${entry.memoText}\n`;
+    const line = Number(entry?.line);
+    const memo = normalizeMemoForRequest(entry?.memoText);
+    if (!memo) return;
+    if (!Number.isFinite(line) || line < 0) return;
+    if (line === 0) {
+      prompt += `GLOBAL memo=${toQuotedPromptField(memo)}\n`;
+      return;
+    }
+    const token = normalizeInstructionTokenForRequest(entry?.token);
+    const sourceLine = normalizeSourceLineForRequest(entry?.sourceLineText);
+    const lineToken = token ? ` token=${token}` : "";
+    const sourceHint = sourceLine ? ` source=${toQuotedPromptField(sourceLine)}` : "";
+    prompt += `TARGET line=${line}${lineToken}${sourceHint} memo=${toQuotedPromptField(memo)}\n`;
   });
   prompt += "[/REQUEST]\n";
+  if (hasActiveSelection) {
+    prompt += `[ACTIVE_TARGET] line=${activeLine}${activeToken ? ` token=${activeToken}` : ""}\n`;
+  }
   if (safeRecoveryHint) {
     prompt += `[RECOVERY]\n${safeRecoveryHint}\n[/RECOVERY]\n`;
   }
@@ -176,6 +224,11 @@ function buildExportPrompt({
     prompt += "inside the code block, the first tag must be <prism-patches>.\n";
     prompt += "line numbers must target [CURRENT_SOURCE_OF_TRUTH] above only.\n";
     prompt += "line prefixes like '73|' are reference markers only; never include those prefixes in REPLACEMENT.\n";
+    prompt += "GLOBAL memo means untargeted intent; infer proper lines conservatively.\n";
+    if (hasActiveSelection) {
+      prompt += "prioritize [ACTIVE_TARGET] for destructive edits.\n";
+      prompt += "preserve sibling nodes on the same line unless REQUEST explicitly asks for broader deletion.\n";
+    }
     prompt += "Format example:\n";
     prompt += "```xml\n";
     prompt += `<prism-patches v="1" b="${baseFingerprint}">\n`;
@@ -190,6 +243,9 @@ function buildExportPrompt({
     prompt += "[CONSTRAINT]\n";
     prompt += "return full updated code only.\n";
     prompt += "no markdown fences, no analysis, no extra prose.\n";
+    if (hasActiveSelection) {
+      prompt += "prioritize [ACTIVE_TARGET] and keep same-line siblings unless explicitly requested.\n";
+    }
     prompt += "if no change is needed, return the original full code only.\n";
   }
 

@@ -2,11 +2,13 @@
   function buildCodeFingerprint(code) {
     const source = String(code || "").replace(/\r\n?/g, "\n");
     let hash = 2166136261;
+    let lineCount = source ? 1 : 0;
     for (let i = 0; i < source.length; i += 1) {
-      hash ^= source.charCodeAt(i);
+      const ch = source.charCodeAt(i);
+      hash ^= ch;
       hash = Math.imul(hash, 16777619);
+      if (ch === 10) lineCount += 1;
     }
-    const lineCount = source ? source.split("\n").length : 0;
     const hashHex = (hash >>> 0).toString(16).padStart(8, "0");
     return `${lineCount}L-${hashHex}`;
   }
@@ -47,10 +49,13 @@
     if (!envelope) return { kind: "none", patches: [], baseFingerprint: "" };
 
     const hasWrapper = /<prism-patches\b[^>]*>/i.test(envelope);
+    const hasSelfClosingWrapper = /<prism-patches\b[^>]*\/>/i.test(envelope);
     const wrapperMatch = envelope.match(/<prism-patches\b([^>]*)>/i);
     const wrapperAttrText = wrapperMatch ? wrapperMatch[1] || "" : "";
     const baseMatch = wrapperAttrText.match(/\b(?:base|b)\s*=\s*["']?([a-zA-Z0-9_.:-]+)["']?/i);
     const baseFingerprint = baseMatch ? baseMatch[1] : "";
+    const wrapperBodyMatch = envelope.match(/<prism-patches\b[^>]*>([\s\S]*?)<\/prism-patches>/i);
+    const wrapperBody = wrapperBodyMatch ? String(wrapperBodyMatch[1] || "") : "";
     const patchRegex = /<prism-patch\b([^>]*)>([\s\S]*?)<\/prism-patch>/gi;
     const patches = [];
     let match = null;
@@ -68,8 +73,13 @@
       if (endLine < startLine) continue;
 
       let replacement = (match[2] || "").replace(/\r\n?/g, "\n");
-      if (replacement.startsWith("\n")) replacement = replacement.slice(1);
-      if (replacement.endsWith("\n")) replacement = replacement.slice(0, -1);
+      // Keep intentional blank lines, while stripping formatter-added single edge newlines.
+      if (replacement.startsWith("\n") && !replacement.startsWith("\n\n")) {
+        replacement = replacement.slice(1);
+      }
+      if (replacement.endsWith("\n") && !replacement.endsWith("\n\n")) {
+        replacement = replacement.slice(0, -1);
+      }
 
       patches.push({
         startLine,
@@ -80,6 +90,17 @@
     }
 
     if (hasWrapper && patches.length === 0) {
+      const hasPatchTagInBody = /<prism-patch\b/i.test(wrapperBody);
+      const meaningfulBody = wrapperBody
+        .replace(/<!--[\s\S]*?-->/g, "")
+        .replace(/\s+/g, "")
+        .trim();
+      if (hasSelfClosingWrapper || meaningfulBody === "") {
+        return { kind: "no_change", patches: [], baseFingerprint };
+      }
+      if (hasPatchTagInBody) {
+        return { kind: "invalid", patches: [], baseFingerprint };
+      }
       return { kind: "no_change", patches: [], baseFingerprint };
     }
     if (patches.length === 0) {
