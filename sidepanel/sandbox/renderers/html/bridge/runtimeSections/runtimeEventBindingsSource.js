@@ -65,6 +65,11 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         if (typeof refreshPickerStatusHud === "function") {
           refreshPickerStatusHud("shift-down");
         }
+        if (typeof requestPickerPointerRefresh === "function") {
+          requestPickerPointerRefresh(true);
+        } else if (typeof refreshPickerTargetFromPointer === "function") {
+          refreshPickerTargetFromPointer(true);
+        }
         try {
           parent.postMessage({ type: "PRISM_SHIFT_PEEK", active: true }, "*");
         } catch (err) {}
@@ -75,6 +80,9 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         prismShiftKeyDown = false;
         if (typeof refreshPickerStatusHud === "function") {
           refreshPickerStatusHud("shift-up");
+        }
+        if (!prismPickerActive && typeof invalidatePickerPointerState === "function") {
+          invalidatePickerPointerState();
         }
         try {
           parent.postMessage({ type: "PRISM_SHIFT_PEEK", active: false }, "*");
