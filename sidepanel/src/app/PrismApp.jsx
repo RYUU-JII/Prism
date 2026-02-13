@@ -984,10 +984,9 @@ function PrismApp() {
   useEffect(() => {
     if (!isEditorModeEnabled) return;
     if (isPickerDisabled) return;
-    if (!isHtmlPayload) return;
     if (pickerActive) return;
     dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: true });
-  }, [isHtmlPayload, isPickerDisabled, isEditorModeEnabled, pickerActive]);
+  }, [isEditorModeEnabled, isPickerDisabled, pickerActive]);
 
   useEffect(() => {
     if (isFreezeDisabled && canvasFrozen) {
