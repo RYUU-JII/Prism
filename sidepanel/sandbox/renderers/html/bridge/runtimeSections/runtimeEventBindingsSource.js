@@ -83,12 +83,6 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         }
         if (!prismPickerActive && typeof invalidatePickerPointerState === "function") {
           invalidatePickerPointerState();
-          if (typeof removePickerPointerStyles === "function") {
-            removePickerPointerStyles();
-          }
-          if (typeof removePickerHoverStyles === "function") {
-            removePickerHoverStyles();
-          }
         }
         try {
           parent.postMessage({ type: "PRISM_SHIFT_PEEK", active: false }, "*");
