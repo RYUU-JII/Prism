@@ -361,7 +361,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
       }
 
       function resolvePickerVisualState(target) {
-        if (!prismPickerActive) return createIdlePickerVisualState();
+        if (!prismPickerActive && !prismShiftKeyDown) return createIdlePickerVisualState();
         const hoverState = resolvePickerHoverState(target);
         if (!hoverState || !hoverState.visualTarget) {
           return createIdlePickerVisualState();
@@ -676,9 +676,14 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
       }
 
       function refreshPickerTargetFromPointer(forceUpdate) {
-        if (!prismPickerActive) {
+        const canPreviewByShift = Boolean(prismShiftKeyDown);
+        if (!prismPickerActive && !canPreviewByShift) {
           refreshPickerDebugOverlay("pointer-refresh-while-inactive", null);
           return;
+        }
+        if (canPreviewByShift && !prismPickerActive) {
+          ensurePickerPointerStyles();
+          ensurePickerHoverStyles();
         }
         if (!prismPointerInside) {
           invalidatePickerPointerState();
@@ -715,7 +720,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
       }
 
       function requestPickerPointerRefresh(forceUpdate) {
-        if (!prismPickerActive) return;
+        if (!prismPickerActive && !prismShiftKeyDown) return;
         if (forceUpdate) {
           prismPickerRefreshForce = true;
         }
