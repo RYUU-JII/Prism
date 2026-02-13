@@ -7,7 +7,11 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         prismPointerInside = true;
         prismPointerClientX = event.clientX;
         prismPointerClientY = event.clientY;
-        refreshPickerTargetFromPointer();
+        if (typeof requestPickerPointerRefresh === "function") {
+          requestPickerPointerRefresh(false);
+        } else {
+          refreshPickerTargetFromPointer();
+        }
       }, true);
 
       document.addEventListener("mouseout", function(event) {
@@ -43,6 +47,7 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
 
       document.addEventListener("click", function(event) {
         if (isDebugOverlayEventTarget(event.target)) return;
+        const forcePickByAltClick = Boolean(event.altKey);
 
         if (
           prismDebugOverlayEnabled &&
@@ -57,15 +62,23 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
           });
         }
 
-        if (!prismPickerActive) {
+        if (!prismPickerActive && !forcePickByAltClick) {
           // Existing memo click behavior.
           const memoEl = event.target.closest && event.target.closest(".prism-has-instruction");
           if (memoEl) {
-            const line = Number(memoEl.getAttribute("data-prism-line")) || 1;
+            const lineTarget = getLineTarget(memoEl) || memoEl;
+            const line = getTargetLine(lineTarget) || 1;
+            const token =
+              typeof resolvePickerClickToken === "function"
+                ? resolvePickerClickToken(lineTarget, line)
+                : typeof getTargetToken === "function"
+                  ? getTargetToken(lineTarget)
+                  : "";
             const rect = memoEl.getBoundingClientRect();
             parent.postMessage({
               type: "PRISM_PICKER_SELECT",
               line,
+              token,
               rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
             }, "*");
           }
@@ -81,11 +94,22 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
 
         const resolvedTarget = normalizePickerTarget(target) || target;
         const line = resolvePickerClickLine(resolvedTarget);
+        const token =
+          typeof resolvePickerClickToken === "function"
+            ? resolvePickerClickToken(resolvedTarget, line)
+            : "";
         rememberPickedVisualTarget(line, resolvedTarget);
-        const rect = resolvedTarget.getBoundingClientRect();
+        const geometry =
+          typeof resolveProxyGeometryTarget === "function"
+            ? resolveProxyGeometryTarget(resolvedTarget)
+            : null;
+        const rect = geometry && geometry.rect
+          ? geometry.rect
+          : resolvedTarget.getBoundingClientRect();
         parent.postMessage({
           type: "PRISM_PICKER_SELECT",
           line,
+          token,
           rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
         }, "*");
       }, true);
@@ -97,20 +121,9 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         if (prismPickerHoverProxy && prismPickerHoverProxySource) {
           syncPickerHoverProxy(prismPickerHoverProxySource);
         }
-      }, true);
-
-      document.addEventListener("keydown", function(event) {
-        if (!prismDebugOverlayEnabled) return;
-        if (event.defaultPrevented) return;
-        if (event.altKey || event.ctrlKey || event.metaKey) return;
-        if (isDebugOverlayEventTarget(event.target)) return;
-        const key = String(event.key || "").toLowerCase();
-        if (key !== "c") return;
-        if (isEditableDebugTarget(event.target)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        copyPickerDebugSnapshot("key-c", prismPickerTarget);
+        if (typeof requestPickerPointerRefresh === "function") {
+          requestPickerPointerRefresh(true);
+        }
       }, true);
 
       document.addEventListener("keydown", function(event) {
@@ -134,14 +147,20 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         }
 
         if (event.data.type === "PRISM_INSTRUCTION_NAVIGATE") {
-          navigateToInstruction(event.data.line, event.data.behavior);
+          navigateToInstruction(event.data.line, event.data.behavior, event.data.token);
         }
       });
 
       const capabilityObserver = new MutationObserver(function(records) {
         if (!records || records.length === 0) return;
-        prunePickedVisualTargetCache();
         scheduleSvgInstructionProxySync();
+        if (prismPickerActive) {
+          if (typeof requestPickerPointerRefresh === "function") {
+            requestPickerPointerRefresh(true);
+          } else {
+            refreshPickerTargetFromPointer(true);
+          }
+        }
         queueRuntimeCapabilities();
       });
 

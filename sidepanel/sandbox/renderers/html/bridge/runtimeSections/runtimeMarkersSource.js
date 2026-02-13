@@ -1,4 +1,111 @@
 export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
+      function getNodeDepth(target) {
+        let depth = 0;
+        let current = target;
+        while (current && current.parentElement) {
+          depth += 1;
+          current = current.parentElement;
+        }
+        return depth;
+      }
+
+      function normalizeInstructionTokenValue(token) {
+        const raw = String(token || "").trim();
+        if (!raw) return "";
+        if (!/^[A-Za-z0-9:_-]{1,64}$/.test(raw)) return "";
+        return raw;
+      }
+
+      function escapeTokenForSelector(token) {
+        const normalized = normalizeInstructionTokenValue(token);
+        if (!normalized) return "";
+        if (window.CSS && typeof window.CSS.escape === "function") {
+          return window.CSS.escape(normalized);
+        }
+        return normalized.replace(/["\\\\]/g, "\\\\$&");
+      }
+
+      function getElementByInstructionToken(token) {
+        const escaped = escapeTokenForSelector(token);
+        if (!escaped) return null;
+        try {
+          return document.querySelector('[data-prism-token="' + escaped + '"]');
+        } catch (err) {
+          return null;
+        }
+      }
+
+      function getBestElementForLine(line, preferredToken) {
+        const numericLine = Number(line);
+        if (!Number.isFinite(numericLine) || numericLine <= 0) return null;
+
+        const normalizedToken = normalizeInstructionTokenValue(preferredToken);
+        if (normalizedToken) {
+          const tokenTarget = getElementByInstructionToken(normalizedToken);
+          if (tokenTarget && tokenTarget.isConnected) {
+            const tokenLineTarget = getLineTarget(tokenTarget) || tokenTarget;
+            const tokenLine = getTargetLine(tokenLineTarget);
+            if (tokenLine === numericLine) {
+              return tokenTarget;
+            }
+          }
+        }
+
+        if (typeof getRememberedPickedVisualTarget === "function") {
+          const remembered = getRememberedPickedVisualTarget(numericLine);
+          if (remembered && remembered.isConnected) {
+            return remembered;
+          }
+        }
+
+        const candidates = Array.from(
+          document.querySelectorAll('[data-prism-line="' + numericLine + '"]')
+        );
+        if (candidates.length === 0) return null;
+
+        let bestByArea = null;
+        let bestByAreaSize = Infinity;
+        let bestByAreaDepth = -1;
+        let bestFallback = null;
+        let bestFallbackDepth = -1;
+
+        candidates.forEach(function(candidate) {
+          if (!candidate || candidate === document.documentElement || candidate === document.body) {
+            return;
+          }
+          const depth = getNodeDepth(candidate);
+          if (depth > bestFallbackDepth) {
+            bestFallback = candidate;
+            bestFallbackDepth = depth;
+          }
+          const rect = getOverlayRectForTarget(candidate);
+          const area = getRectAreaSafe(rect);
+          if (!(area > 0)) return;
+          if (
+            area < bestByAreaSize ||
+            (area === bestByAreaSize && depth > bestByAreaDepth)
+          ) {
+            bestByArea = candidate;
+            bestByAreaSize = area;
+            bestByAreaDepth = depth;
+          }
+        });
+
+        return bestByArea || bestFallback || candidates[0] || null;
+      }
+
+      function hasComplexClipShape(target) {
+        if (!target || !window.getComputedStyle) return false;
+        try {
+          const style = window.getComputedStyle(target);
+          const clipPath = String(style.clipPath || style.webkitClipPath || "");
+          if (clipPath && clipPath !== "none") return true;
+          const maskImage = String(style.maskImage || style.webkitMaskImage || "");
+          if (maskImage && maskImage !== "none") return true;
+        } catch (err) {}
+        return false;
+      }
+
       function ensureInstructionStyles() {
         if (prismInstructionStyle) return;
         const style = document.createElement("style");
@@ -22,13 +129,11 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
           "  filter: none !important;",
           "}",
           ".prism-has-instruction:not(.prism-has-instruction--background).prism-has-instruction--picker-focus,",
-          ".prism-has-instruction:not(.prism-has-instruction--background).prism-has-instruction--notes-preview {",
-          "  box-shadow: 0 0 0 2px var(--prism-marker-focus-ring-1), 0 0 0 4px var(--prism-marker-focus-ring-2), 0 0 0 6px var(--prism-marker-focus-ring-3), 0 0 0 8px var(--prism-marker-focus-ring-4), 0 0 0 10px var(--prism-marker-focus-ring-5) !important;",
-          "}",
+          ".prism-has-instruction:not(.prism-has-instruction--background).prism-has-instruction--notes-preview,",
           ".prism-has-instruction.prism-has-instruction--editing:not(.prism-has-instruction--background),",
           ".prism-editing-target {",
-          "  outline: none !important;",
-          "  outline-offset: 0 !important;",
+          "  outline: var(--prism-marker-outline-width) dashed var(--prism-marker-color-rgba) !important;",
+          "  outline-offset: var(--prism-marker-outline-offset) !important;",
           "  box-shadow: inset 0 0 0 9999px " + PRISM_PICKER_FILL + " !important;",
           "  filter: none !important;",
           "}",
@@ -36,43 +141,23 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
           "  outline: none !important;",
           "  box-shadow: inset 0 0 0 9999px " + PRISM_PICKER_FILL + " !important;",
           "}",
-          ".prism-has-instruction.prism-has-instruction--editing:not(.prism-has-instruction--background)::before,",
-          ".prism-editing-target::before,",
-          ".prism-svg-instruction-proxy.prism-has-instruction--editing::before {",
-          "  content: '';",
-          "  position: absolute;",
-          "  inset: calc(-1 * var(--prism-marker-outline-offset));",
-          "  border-radius: calc(var(--prism-marker-focus-radius) + var(--prism-marker-outline-offset));",
-          "  pointer-events: none;",
-          "  z-index: 999;",
-          "  background: linear-gradient(90deg, var(--prism-marker-color-rgba) 50%, transparent 0) 0 0 / 12px var(--prism-marker-outline-width) repeat-x, linear-gradient(90deg, var(--prism-marker-color-rgba) 50%, transparent 0) 0 100% / 12px var(--prism-marker-outline-width) repeat-x, linear-gradient(0deg, var(--prism-marker-color-rgba) 50%, transparent 0) 0 0 / var(--prism-marker-outline-width) 12px repeat-y, linear-gradient(0deg, var(--prism-marker-color-rgba) 50%, transparent 0) 100% 0 / var(--prism-marker-outline-width) 12px repeat-y;",
-          "  animation: prism-edit-dash-rotate 1.8s linear infinite;",
-          "}",
-          "@keyframes prism-edit-dash-rotate {",
-          "  to {",
-          "    background-position: 24px 0, -24px 100%, 0 -24px, 100% 24px;",
-          "  }",
-          "}",
           ".prism-svg-instruction-proxy {",
             "  position: fixed;",
             "  z-index: 2147483646;",
             "  pointer-events: none;",
             "  box-sizing: border-box;",
-          "  border-radius: var(--prism-marker-focus-radius);",
+          "  border-radius: 0;",
           "  border: 0;",
           "  transform-origin: center center;",
           "  box-shadow: 0 0 0 var(--prism-marker-outline-width) var(--prism-marker-color-rgba);",
           "}",
-          ".prism-svg-instruction-proxy.prism-has-instruction--picker-focus {",
-          "  box-shadow: 0 0 0 var(--prism-marker-outline-width) var(--prism-marker-color-rgba), 0 0 0 2px var(--prism-marker-focus-ring-1), 0 0 0 4px var(--prism-marker-focus-ring-2), 0 0 0 6px var(--prism-marker-focus-ring-3), 0 0 0 8px var(--prism-marker-focus-ring-4), 0 0 0 10px var(--prism-marker-focus-ring-5) !important;",
-          "}",
-          ".prism-svg-instruction-proxy.prism-has-instruction--notes-preview {",
-          "  box-shadow: 0 0 0 var(--prism-marker-outline-width) var(--prism-marker-color-rgba), 0 0 0 2px var(--prism-marker-focus-ring-1), 0 0 0 4px var(--prism-marker-focus-ring-2), 0 0 0 6px var(--prism-marker-focus-ring-3), 0 0 0 8px var(--prism-marker-focus-ring-4), 0 0 0 10px var(--prism-marker-focus-ring-5) !important;",
-          "}",
+          ".prism-svg-instruction-proxy.prism-has-instruction--picker-focus,",
+          ".prism-svg-instruction-proxy.prism-has-instruction--notes-preview,",
           ".prism-svg-instruction-proxy.prism-has-instruction--editing {",
-          "  outline: none !important;",
-          "  outline-offset: 0 !important;",
+          "  outline: var(--prism-marker-outline-width) dashed var(--prism-marker-color-rgba) !important;",
+          "  outline-offset: var(--prism-marker-outline-offset) !important;",
           "  box-shadow: inset 0 0 0 9999px " + PRISM_PICKER_FILL + " !important;",
+          "  filter: none !important;",
           "}",
           ".prism-svg-instruction-proxy[data-prism-has-instruction='true']::after {",
           "  content: '';",
@@ -164,8 +249,10 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
             prismSvgInstructionProxies.delete(key);
             return;
           }
-          const rect = target.getBoundingClientRect();
-          if (!rect || (!rect.width && !rect.height)) {
+          const geometry = resolveInstructionProxyGeometryTarget(target);
+          const geometryTarget = geometry && geometry.target ? geometry.target : target;
+          const rect = geometry ? geometry.rect : null;
+          if (!rect || getRectAreaSafe(rect) <= 0) {
             proxy.style.display = "none";
             return;
           }
@@ -174,8 +261,47 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
           proxy.style.top = rect.top + "px";
           proxy.style.width = rect.width + "px";
           proxy.style.height = rect.height + "px";
-          proxy.style.borderRadius = resolveOverlayBorderRadius(target);
+          proxy.style.borderRadius = resolveOverlayBorderRadius(geometryTarget);
         });
+      }
+
+      function resolveInstructionProxyGeometryTarget(target) {
+        const lineRoot = getLineTarget(target);
+        let current = target;
+        while (current && current.getBoundingClientRect) {
+          const rect = getOverlayRectForTarget(current);
+          if (rect && getRectAreaSafe(rect) > 0) {
+            return {
+              target: current,
+              rect
+            };
+          }
+          if (lineRoot && current === lineRoot) {
+            break;
+          }
+          const next = current.parentElement;
+          if (!next || next === document.body || next === document.documentElement) {
+            break;
+          }
+          current = next;
+        }
+        if (
+          lineRoot &&
+          lineRoot !== target &&
+          lineRoot.getBoundingClientRect
+        ) {
+          const lineRect = getOverlayRectForTarget(lineRoot);
+          if (lineRect && getRectAreaSafe(lineRect) > 0) {
+            return {
+              target: lineRoot,
+              rect: lineRect
+            };
+          }
+        }
+        return {
+          target: target,
+          rect: null
+        };
       }
 
       function scheduleSvgInstructionProxySync() {
@@ -303,22 +429,18 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
 
       function shouldUseSvgInstructionProxy(target) {
         if (!target || !target.tagName) return false;
+        if (target === document.documentElement || target === document.body) return false;
         if (isSvgTargetElement(target)) return true;
-        const tag = String(target.tagName || "").toLowerCase();
-        return (
-          tag === "canvas" ||
-          tag === "img" ||
-          tag === "video" ||
-          tag === "iframe" ||
-          tag === "object" ||
-          tag === "embed"
-        );
+        if (isBackgroundLikeTarget(target)) return true;
+        return hasComplexClipShape(target);
       }
 
       function shouldUsePickerHoverProxy(target) {
-        // Hover feedback is most stable when it attaches directly to canvas.
-        // Keep proxy hover for true SVG nodes only.
-        return isSvgTargetElement(target);
+        if (!target || !target.tagName) return false;
+        if (target === document.documentElement || target === document.body) return false;
+        if (isSvgTargetElement(target)) return true;
+        if (isBackgroundLikeTarget(target)) return true;
+        return hasComplexClipShape(target);
       }
 
       function applyMarkers() {
@@ -364,7 +486,8 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
         ensureInstructionStyles();
 
         keys.forEach(line => {
-          const el = document.querySelector('[data-prism-line="' + line + '"]');
+          const preferredToken = getInstructionTokenForLine(line);
+          const el = getBestElementForLine(line, preferredToken);
           if (el) {
             el.classList.add("prism-has-instruction");
             const useProxy = shouldUseSvgInstructionProxy(el);
@@ -400,7 +523,11 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
         });
         scheduleSvgInstructionProxySync();
         if (prismPickerActive) {
-          refreshPickerTargetFromPointer(true);
+          if (typeof requestPickerPointerRefresh === "function") {
+            requestPickerPointerRefresh(true);
+          } else {
+            refreshPickerTargetFromPointer(true);
+          }
         }
         syncPreviewFocus();
         syncEditingFocus();
@@ -471,6 +598,12 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
         return Number.isFinite(line) && line > 0 ? line : null;
       }
 
+      function getTargetToken(target) {
+        if (!target || !target.getAttribute) return "";
+        const token = normalizeInstructionTokenValue(target.getAttribute("data-prism-token"));
+        return token || "";
+      }
+
       function getLineTarget(target) {
         if (!target) return null;
         if (target.hasAttribute && target.hasAttribute("data-prism-line")) {
@@ -483,6 +616,37 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
       function hasInstructionForLine(line) {
         if (!line) return false;
         return Object.prototype.hasOwnProperty.call(prismInstructions, String(line));
+      }
+
+      function getInstructionRecordForLine(line) {
+        const key = String(Number(line) || "");
+        if (!key || !Object.prototype.hasOwnProperty.call(prismInstructions, key)) {
+          return null;
+        }
+        const value = prismInstructions[key];
+        if (value && typeof value === "object") {
+          return value;
+        }
+        return {
+          memoText: String(value || ""),
+          token: "",
+        };
+      }
+
+      function getInstructionTokenForLine(line) {
+        const record = getInstructionRecordForLine(line);
+        if (!record) return "";
+        return normalizeInstructionTokenValue(record.token);
+      }
+
+      function getPreferredEditingTokenForLine(line) {
+        const numericLine = Number(line);
+        if (!Number.isFinite(numericLine) || numericLine <= 0) return "";
+        if (numericLine === Number(prismEditingLine)) {
+          const editingToken = normalizeInstructionTokenValue(prismEditingToken);
+          if (editingToken) return editingToken;
+        }
+        return getInstructionTokenForLine(numericLine);
       }
 
       function getInstructionMarkerForLineTarget(target) {
@@ -514,7 +678,8 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
         if (!Number.isFinite(numericLine) || numericLine <= 0 || !hasInstructionForLine(numericLine)) {
           return null;
         }
-        const lineTarget = document.querySelector('[data-prism-line="' + numericLine + '"]');
+        const preferredToken = getInstructionTokenForLine(numericLine);
+        const lineTarget = getBestElementForLine(numericLine, preferredToken);
         if (!lineTarget) return null;
         return getInstructionMarkerForLineTarget(lineTarget);
       }
@@ -527,6 +692,87 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
         setPreviewFocusedInstruction(getInstructionMarkerForLine(prismPreviewLine));
       }
 
+      function getEditingVisualTargetForLine(line) {
+        const numericLine = Number(line);
+        if (!Number.isFinite(numericLine) || numericLine <= 0) return null;
+
+        if (
+          Number.isFinite(prismPointerClientX) &&
+          Number.isFinite(prismPointerClientY) &&
+          typeof resolveDirectPickTarget === "function"
+        ) {
+          const resolved = resolveDirectPickTarget(prismPointerClientX, prismPointerClientY);
+          const pointerTarget = resolved && resolved.target ? resolved.target : null;
+          if (pointerTarget) {
+            const pointerLineTarget = getLineTarget(pointerTarget) || pointerTarget;
+            const pointerLine = getTargetLine(pointerLineTarget);
+            if (pointerLine === numericLine) {
+              return pointerTarget;
+            }
+          }
+        }
+
+        const hoverTarget =
+          prismPickerVisualState &&
+          prismPickerVisualState.hoverTarget &&
+          prismPickerVisualState.hoverTarget.isConnected
+            ? prismPickerVisualState.hoverTarget
+            : null;
+        if (hoverTarget) {
+          const hoverLineTarget = getLineTarget(hoverTarget) || hoverTarget;
+          const hoverLine = getTargetLine(hoverLineTarget);
+          if (hoverLine === numericLine) {
+            return hoverTarget;
+          }
+        }
+
+        if (prismPickerTarget && prismPickerTarget.isConnected) {
+          const pickerVisualTarget =
+            typeof normalizePickerTarget === "function"
+              ? normalizePickerTarget(prismPickerTarget) || prismPickerTarget
+              : prismPickerTarget;
+          const pickerLineTarget = getLineTarget(pickerVisualTarget) || pickerVisualTarget;
+          const pickerLine = getTargetLine(pickerLineTarget);
+          if (pickerLine === numericLine) {
+            return pickerVisualTarget;
+          }
+        }
+
+        return null;
+      }
+
+      function applyEditingFocusTarget(target) {
+        if (!target) return false;
+        if (shouldUseSvgInstructionProxy(target)) {
+          const pickedLineTarget = getLineTarget(target) || target;
+          const pickedLine = getTargetLine(pickedLineTarget);
+          if (pickedLine) {
+            const proxy = ensureSvgInstructionProxy(pickedLine, target);
+            if (proxy) {
+              if (!hasInstructionForLine(pickedLine)) {
+                proxy.dataset.prismHasInstruction = "false";
+              }
+              setEditingFocusedInstruction(proxy);
+              return true;
+            }
+          }
+          return false;
+        }
+        if (!isSvgTargetElement(target)) {
+          const style = window.getComputedStyle(target);
+          if (
+            style.position === "static" &&
+            target !== document.body &&
+            target !== document.documentElement
+          ) {
+            target.style.position = "relative";
+            target.dataset.prismEditingSetPosition = "true";
+          }
+        }
+        setEditingFocusedInstruction(target);
+        return true;
+      }
+
       function syncEditingFocus() {
         if (!prismEditingLine || prismEditingLine <= 0) {
           clearEditingFocusedInstruction();
@@ -534,33 +780,16 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
         }
 
         const rememberedTarget = getRememberedPickedVisualTarget(prismEditingLine);
-        if (rememberedTarget) {
-          if (shouldUseSvgInstructionProxy(rememberedTarget)) {
-            const rememberedLineTarget = getLineTarget(rememberedTarget) || rememberedTarget;
-            const rememberedLine = getTargetLine(rememberedLineTarget);
-            if (rememberedLine) {
-              const rememberedProxy = ensureSvgInstructionProxy(rememberedLine, rememberedTarget);
-              if (rememberedProxy) {
-                if (!hasInstructionForLine(rememberedLine)) {
-                  rememberedProxy.dataset.prismHasInstruction = "false";
-                }
-                setEditingFocusedInstruction(rememberedProxy);
-                return;
-              }
-            }
-          } else if (!isSvgTargetElement(rememberedTarget)) {
-            const style = window.getComputedStyle(rememberedTarget);
-            if (
-              style.position === "static" &&
-              rememberedTarget !== document.body &&
-              rememberedTarget !== document.documentElement
-            ) {
-              rememberedTarget.style.position = "relative";
-              rememberedTarget.dataset.prismEditingSetPosition = "true";
-            }
-          }
-          setEditingFocusedInstruction(rememberedTarget);
+        if (rememberedTarget && applyEditingFocusTarget(rememberedTarget)) {
           return;
+        }
+
+        const liveVisualTarget = getEditingVisualTargetForLine(prismEditingLine);
+        if (liveVisualTarget) {
+          rememberPickedVisualTarget(prismEditingLine, liveVisualTarget);
+          if (applyEditingFocusTarget(liveVisualTarget)) {
+            return;
+          }
         }
 
         const marker = getInstructionMarkerForLine(prismEditingLine);
@@ -569,34 +798,15 @@ export const SNAPSHOT_RUNTIME_MARKERS_SOURCE = `
           return;
         }
 
-        const lineTarget = document.querySelector('[data-prism-line="' + prismEditingLine + '"]');
+        const preferredToken = getPreferredEditingTokenForLine(prismEditingLine);
+        const lineTarget = getBestElementForLine(prismEditingLine, preferredToken);
         if (!lineTarget) {
           clearEditingFocusedInstruction();
           return;
         }
-        if (shouldUseSvgInstructionProxy(lineTarget)) {
-          const proxy = ensureSvgInstructionProxy(prismEditingLine, lineTarget);
-          if (proxy) {
-            if (!hasInstructionForLine(prismEditingLine)) {
-              proxy.dataset.prismHasInstruction = "false";
-            }
-            setEditingFocusedInstruction(proxy);
-            return;
-          }
+        if (!applyEditingFocusTarget(lineTarget)) {
           clearEditingFocusedInstruction();
-          return;
         }
-
-        const style = window.getComputedStyle(lineTarget);
-        if (
-          style.position === "static" &&
-          lineTarget !== document.body &&
-          lineTarget !== document.documentElement
-        ) {
-          lineTarget.style.position = "relative";
-          lineTarget.dataset.prismEditingSetPosition = "true";
-        }
-        setEditingFocusedInstruction(lineTarget);
       }
 
 

@@ -155,6 +155,30 @@ export const SNAPSHOT_RUNTIME_PRELUDE_SOURCE = `
         }
       });
 
+      function shouldPreventAnchorNavigation(target) {
+        if (!target || typeof target.getAttribute !== "function") return false;
+        const rawHref = target.getAttribute("href");
+        if (rawHref === null || rawHref === "") return false;
+        const href = String(rawHref).trim();
+        if (!href) return false;
+        const normalized = href.toLowerCase();
+        return (
+          href === "#" ||
+          href.charAt(0) === "#" ||
+          normalized === "javascript:void(0)" ||
+          normalized === "javascript:void(0);" ||
+          normalized === "javascript:"
+        );
+      }
+
+      document.addEventListener("click", function(event) {
+        const anchor = event && event.target && event.target.closest
+          ? event.target.closest("a[href]")
+          : null;
+        if (!anchor || !shouldPreventAnchorNavigation(anchor)) return;
+        event.preventDefault();
+      }, true);
+
       const PICKER_VISUAL_MODE = Object.freeze({
         IDLE: "idle",
         HOVER: "hover",
@@ -183,10 +207,12 @@ export const SNAPSHOT_RUNTIME_PRELUDE_SOURCE = `
       let prismEditingFocusedInstruction = null;
       let prismPreviewLine = null;
       let prismEditingLine = null;
+      let prismEditingToken = null;
       let prismPointerClientX = null;
       let prismPointerClientY = null;
       let prismPointerInside = false;
       let prismPickerTrackingRaf = null;
+      let prismPickerRefreshForce = false;
       const prismPickerTargetKindCache = new WeakMap();
       const PRISM_PICKER_FILL = "rgba(79, 210, 195, 0.12)";
       const PRISM_BADGE_ICON_URL = 'url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2012%2012%22%3E%3Cpath%20fill=%22%23fff%22%20d=%22M6%200.9%207.2%204.8%2011.1%206%207.2%207.2%206%2011.1%204.8%207.2%200.9%206%204.8%204.8Z%22/%3E%3C/svg%3E")';
@@ -302,6 +328,19 @@ export const SNAPSHOT_RUNTIME_PRELUDE_SOURCE = `
         return Math.round(num * scale) / scale;
       }
 
+      function getRectAreaSafe(rect) {
+        if (!rect) return 0;
+        const width = Number(rect.width) || 0;
+        const height = Number(rect.height) || 0;
+        if (width <= 0 || height <= 0) return 0;
+        return width * height;
+      }
+
+      function getOverlayRectForTarget(target) {
+        if (!target || !target.getBoundingClientRect) return null;
+        return target.getBoundingClientRect();
+      }
+
       function getDebugLineFromTarget(target) {
         if (!target) return null;
         let lineTarget = null;
@@ -391,22 +430,6 @@ export const SNAPSHOT_RUNTIME_PRELUDE_SOURCE = `
           info.borderRadius = style.borderRadius || "";
         }
         return info;
-      }
-
-      function listElementsAtPointerForDebug(x, y) {
-        if (!Number.isFinite(x) || !Number.isFinite(y) || !document.elementsFromPoint) return [];
-        let elements = [];
-        try {
-          elements = document.elementsFromPoint(x, y) || [];
-        } catch (err) {
-          elements = [];
-        }
-        return elements
-          .slice(0, 10)
-          .map(function(el) {
-            return describeDebugElement(el, true);
-          })
-          .filter(Boolean);
       }
 
       function ensureDebugOverlayElement() {
@@ -592,7 +615,8 @@ export const SNAPSHOT_RUNTIME_PRELUDE_SOURCE = `
             debugOverlay: Boolean(prismDebugOverlayEnabled),
             debugPinned: Boolean(prismDebugSnapshotPinned),
             previewLine: prismPreviewLine || null,
-            editingLine: prismEditingLine || null
+            editingLine: prismEditingLine || null,
+            editingToken: prismEditingToken || null
           },
           visualState: {
             mode:
@@ -630,8 +654,7 @@ export const SNAPSHOT_RUNTIME_PRELUDE_SOURCE = `
             count: instructionLines.length,
             lines: instructionLines.slice(0, 40)
           },
-          resolution: prismLastTargetResolutionDebug || null,
-          elementsFromPoint: listElementsAtPointerForDebug(prismPointerClientX, prismPointerClientY)
+          resolution: prismLastTargetResolutionDebug || null
         };
       }
 

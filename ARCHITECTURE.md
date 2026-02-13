@@ -156,8 +156,9 @@ picker 선택 시 `PRISM_PICKER_SELECT`가 App으로 올라오고, 하단 `Comma
 ### `sidepanel/sandbox/renderers/html/htmlRenderer.js`
 
 - srcdoc bridge를 문자열로 주입합니다.
-- picker hover 오버레이, 메모 마커, SVG proxy, editing dash 효과를 렌더합니다.
-- `elementsFromPoint` 기반 target 탐색으로 중첩 요소 선택 기회를 유지합니다.
+- picker hover 오버레이, 메모 마커, 편집 dash 효과를 렌더합니다.
+- `elementFromPoint` + 미세 샘플 보정 기반 direct hit target 탐색을 사용합니다.
+- 오버레이는 타입(CSS/SVG/Canvas)과 무관하게 사각형 프록시로 통일됩니다.
 - 스냅샷용 DOM payload(`PRISM_EXPORT_FOR_CAPTURE`)를 생성합니다.
 
 ### `sidepanel/src/shared/utils/capture.js`
@@ -171,16 +172,16 @@ picker 선택 시 `PRISM_PICKER_SELECT`가 App으로 올라오고, 하단 `Comma
 아래 클래스가 실제 시각 상태를 결정합니다.
 
 - 기본 메모 마커: `.prism-has-instruction`
-- 피커 hover(비메모 대상 포함): `.prism-picker-hover` (+ `--svg`, `--background`)
+- 피커 hover(비메모 대상 포함): `.prism-picker-hover`
 - 메모 대상 피커 포커스: `.prism-has-instruction--picker-focus`
 - Notes hover 프리뷰: `.prism-has-instruction--notes-preview`
 - 편집중: `.prism-has-instruction--editing` 또는 `.prism-editing-target`
-- SVG 보정용 프록시: `.prism-svg-instruction-proxy`
+- 범용 instruction 프록시: `.prism-svg-instruction-proxy` (클래스명은 호환 유지)
 
 중요:
 
-- SVG는 원본 stroke/outline 대신 프록시 박스를 RAF로 동기화해서 표시합니다.
-- background-like 요소는 별도 처리(`--background`)로 과도한 레이아웃 교란을 방지합니다.
+- hover/edit/memo 모두 프록시 사각형 geometry를 공유합니다.
+- CSS 의사요소/0x0 도형은 DOM 제약상 래퍼 박스로 fallback 될 수 있습니다.
 
 ## 6. 메시지 프로토콜 (핵심)
 
