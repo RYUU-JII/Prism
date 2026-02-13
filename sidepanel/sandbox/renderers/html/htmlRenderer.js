@@ -20,7 +20,7 @@ async function renderHtml(code, theme) {
   root.className = "mode-html";
 
   const frame = document.createElement("iframe");
-  frame.setAttribute("sandbox", "allow-scripts allow-same-origin");
+  frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-modals");
   frame.style.width = "100%";
   frame.style.height = "100%";
   frame.style.border = "0";

@@ -4,6 +4,7 @@ const LEGACY_THEME_KEY = "prism-expert-theme";
 const CORE_POLICY_PROFILE_VERSION = 1;
 const AUTO_IMPORT_DEFAULT_VERSION = 1;
 const VALID_THEME_MODES = ["detect", "light", "dark"];
+const VALID_STARTUP_MODES = ["view", "edit"];
 
 const DEFAULT_UI_SETTINGS = {
   themeMode: "detect",
@@ -25,6 +26,7 @@ const DEFAULT_UI_SETTINGS = {
   patchFullSyncEvery: 0,
   retryFullSyncOnReject: false,
   exportAction: "inject",
+  startupMode: "view",
   corePolicyProfileVersion: CORE_POLICY_PROFILE_VERSION,
 };
 
@@ -41,6 +43,9 @@ function loadUiSettings() {
         : DEFAULT_UI_SETTINGS.themeMode;
     const storedProfileVersion = Number(parsed?.corePolicyProfileVersion || 0);
     const shouldApplyCorePolicyProfile = storedProfileVersion < CORE_POLICY_PROFILE_VERSION;
+    const startupMode = VALID_STARTUP_MODES.includes(parsed?.startupMode)
+      ? parsed.startupMode
+      : DEFAULT_UI_SETTINGS.startupMode;
     const captureRange = ["visible", "full"].includes(parsed?.captureRange)
       ? parsed.captureRange
       : DEFAULT_UI_SETTINGS.captureRange;
@@ -131,6 +136,7 @@ function loadUiSettings() {
           : DEFAULT_UI_SETTINGS.pickerAutoPause,
       pickerHighlight,
       exportAction,
+      startupMode,
       autoImportResponse,
       autoImportResponseVersion: AUTO_IMPORT_DEFAULT_VERSION,
       patchFullSyncEvery,
@@ -153,6 +159,7 @@ export {
   PATCH_FULL_SYNC_CADENCE_OPTIONS,
   UI_SETTINGS_KEY,
   VALID_THEME_MODES,
+  VALID_STARTUP_MODES,
   DEFAULT_UI_SETTINGS,
   loadUiSettings,
   resolveThemeModeTheme,

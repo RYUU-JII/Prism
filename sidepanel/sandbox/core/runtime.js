@@ -18,12 +18,21 @@ let activeVueApp = null;
 let activeVueStyleNodes = [];
 let reactEsmRunner = null;
 let reactRenderToken = 0;
+
+function normalizeInstructionToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return "";
+  if (!/^[A-Za-z0-9:_-]{1,64}$/.test(raw)) return "";
+  return raw;
+}
+
 let uiState = {
   pickerActive: false,
   frozen: false,
   instructions: {},
   previewLine: null,
   editingLine: null,
+  editingToken: null,
   isViewMode: false,
   settings: { ...DEFAULT_UI_SETTINGS }
 };
@@ -397,6 +406,7 @@ window.addEventListener("message", (event) => {
   if (data.type === "PRISM_UI_STATE") {
     const previewLine = Number(data.previewLine);
     const editingLine = Number(data.editingLine);
+    const editingToken = normalizeInstructionToken(data.editingToken);
     uiState = {
       pickerActive: Boolean(data.pickerActive),
       frozen: Boolean(data.frozen),
@@ -408,6 +418,10 @@ window.addEventListener("message", (event) => {
       editingLine:
         Number.isFinite(editingLine) && editingLine > 0
           ? editingLine
+          : null,
+      editingToken:
+        Number.isFinite(editingLine) && editingLine > 0
+          ? editingToken || null
           : null,
       isViewMode: Boolean(data.isViewMode),
       settings: normalizeUiSettings(data.settings)

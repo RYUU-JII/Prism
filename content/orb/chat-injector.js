@@ -34,17 +34,6 @@
       return input?.closest("form, [role='form'], [class*='input'], [class*='composer'], [class*='prompt']") || input?.parentElement || null;
     }
 
-    function pickFirstVisibleCandidate(candidates, options = {}) {
-      const { excludeSidebar = false } = options;
-      for (let i = candidates.length - 1; i >= 0; i -= 1) {
-        const candidate = candidates[i];
-        if (!isElementVisible(candidate)) continue;
-        if (excludeSidebar && isLikelySidebarControl(candidate)) continue;
-        return candidate;
-      }
-      return null;
-    }
-
     function findBestInputCandidate() {
       const learned = intelligentExtractor?.findBestInput?.();
       if (learned) return learned;
@@ -83,16 +72,18 @@
 
       const host = window.location.host;
       if (host.includes("gemini.google.com")) {
-        if (learned && isElementVisible(learned) && !isLikelySidebarControl(learned)) {
-          return learned;
-        }
-
         const composerRoot = resolveGeminiComposerRoot();
         const geminiCandidates = [
           ...(composerRoot ? Array.from(composerRoot.querySelectorAll("button")) : []),
           ...Array.from(document.querySelectorAll("button[aria-label*='send' i], button[aria-label*='전송'], button[aria-label*='보내기'], button.send-button")),
         ];
-        return pickFirstVisibleCandidate(geminiCandidates, { excludeSidebar: true });
+        for (let i = geminiCandidates.length - 1; i >= 0; i -= 1) {
+          const candidate = geminiCandidates[i];
+          if (!isElementVisible(candidate)) continue;
+          if (isLikelySidebarControl(candidate)) continue;
+          return candidate;
+        }
+        return null;
       }
 
       if (learned) return learned;

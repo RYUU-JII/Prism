@@ -535,13 +535,6 @@
     return score;
   }
 
-  function rankAssistantContainers() {
-    return collectAssistantContainers()
-      .map((node, index) => ({ node, score: scoreAssistantContainer(node, index) }))
-      .sort((a, b) => b.score - a.score)
-      .map((entry) => entry.node);
-  }
-
   function installNetworkProbe() {
     if (window.__prismNetworkProbeInstalled) return;
     window.__prismNetworkProbeInstalled = true;
@@ -731,7 +724,10 @@
 
     function extractPatchCandidateText() {
       const patchPattern = /<\s*prism-patch\b|<\s*prism-patches\b|&lt;\s*prism-patch\b|&lt;\s*prism-patches\b/i;
-      const nodes = rankAssistantContainers();
+      const nodes = collectAssistantContainers()
+        .map((node, index) => ({ node, score: scoreAssistantContainer(node, index) }))
+        .sort((a, b) => b.score - a.score)
+        .map((entry) => entry.node);
       for (let i = 0; i < nodes.length; i += 1) {
         const node = nodes[i];
         const patchNode = node?.querySelector?.("prism-patches");
@@ -760,9 +756,11 @@
     }
 
     function extractAssistantTextCandidate() {
-      const nodes = rankAssistantContainers();
+      const nodes = collectAssistantContainers()
+        .map((node, index) => ({ node, score: scoreAssistantContainer(node, index) }))
+        .sort((a, b) => b.score - a.score);
       for (let i = 0; i < nodes.length; i += 1) {
-        const text = nodes[i]?.innerText || "";
+        const text = nodes[i]?.node?.innerText || "";
         if (!text || text.trim().length < 8) continue;
         return text;
       }

@@ -206,11 +206,13 @@ const buildCodeFingerprint =
     : (code) => {
       const source = String(code || "").replace(/\r\n?/g, "\n");
       let hash = 2166136261;
+      let lineCount = source ? 1 : 0;
       for (let i = 0; i < source.length; i += 1) {
-        hash ^= source.charCodeAt(i);
+        const ch = source.charCodeAt(i);
+        hash ^= ch;
         hash = Math.imul(hash, 16777619);
+        if (ch === 10) lineCount += 1;
       }
-      const lineCount = source ? source.split("\n").length : 0;
       const hashHex = (hash >>> 0).toString(16).padStart(8, "0");
       return `${lineCount}L-${hashHex}`;
     };
@@ -303,8 +305,8 @@ function notifyPatchApplyRejected(reason, details = {}) {
 function buildPatchPayloadSignature(parsed) {
   if (!parsed || !Array.isArray(parsed.patches)) return "";
   const normalizedPatches = parsed.patches.map((patch) => ({
-    s: Number(patch?.start),
-    e: Number(patch?.end),
+    s: Number(patch?.startLine ?? patch?.start),
+    e: Number(patch?.endLine ?? patch?.end),
     r: String(patch?.replacement || ""),
   }));
   const source = JSON.stringify({

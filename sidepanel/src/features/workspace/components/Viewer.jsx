@@ -25,7 +25,7 @@ const Viewer = forwardRef(({ onReady, containerClassName = "panel-shell__content
         src={chrome?.runtime?.getURL
           ? chrome.runtime.getURL("sidepanel/sandbox.html")
           : "sandbox.html"}
-        sandbox="allow-scripts allow-same-origin"
+        sandbox="allow-scripts allow-same-origin allow-modals"
         className="w-full h-full border-0"
       ></iframe>
     </div>

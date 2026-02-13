@@ -20,10 +20,9 @@ const Header = ({
   onUpdateSetting,
   themeMode,
   onThemeModeChange,
-  isViewMode,
-  onToggleViewMode,
-  feedbackMessage,
-  feedbackActive,
+  isEditorModeEnabled,
+  onToggleEditorMode,
+  rightSlot = null,
 }) => {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [utilityMenuOpen, setUtilityMenuOpen] = useState(false);
@@ -36,14 +35,9 @@ const Header = ({
   const retryFullSyncOnReject = uiSettings?.retryFullSyncOnReject === true;
   const adaptiveResponseRouting = uiSettings?.adaptiveResponseRouting !== false;
   const showTooltips = uiSettings?.showTooltips !== false;
-  const debugPickerOverlay = uiSettings?.debugPickerOverlay === true;
+  const startupMode = uiSettings?.startupMode === "edit" ? "edit" : "view";
   const activeThemeMode =
     themeMode === "light" || themeMode === "dark" ? themeMode : "detect";
-  const indicatorMessage =
-    typeof feedbackMessage === "string" && feedbackMessage.trim()
-      ? feedbackMessage.trim()
-      : "대기중";
-
   useEffect(() => {
     if (!settingsOpen && !utilityMenuOpen) return undefined;
 
@@ -85,18 +79,6 @@ const Header = ({
 
   const coreButtonDefs = [
     {
-      id: "pickerDebugOverlay",
-      title: debugPickerOverlay ? "Disable Picker Debug" : "Enable Picker Debug",
-      tooltip: debugPickerOverlay ? "Picker Debug: On" : "Picker Debug: Off",
-      action: () => onToggleSetting?.("debugPickerOverlay"),
-      extraClass: `panel-shell__action--debug ${debugPickerOverlay ? "panel-shell__action--active" : ""}`,
-      icon: (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M20 8h-2.81a5 5 0 0 0-9.38 0H5a2 2 0 0 0-2 2v2h2v3a4 4 0 0 0 4 4h1v2h4v-2h1a4 4 0 0 0 4-4v-3h2v-2a2 2 0 0 0-2-2Zm-7-3a3 3 0 0 1 2.82 2h-5.64A3 3 0 0 1 13 5Zm4 10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-3h10v3Zm-6-1h4v2h-4v-2Z" />
-        </svg>
-      ),
-    },
-    {
       id: "playPause",
       title: canvasFrozen ? "Resume Playback" : "Pause Playback",
       tooltip: canvasFrozen ? "Resume" : "Pause",
@@ -115,16 +97,19 @@ const Header = ({
     },
     {
       id: "viewMode",
-      title: isViewMode ? "Edit Mode" : "View Mode",
-      tooltip: isViewMode ? "Switch to Edit Mode" : "Switch to View Mode",
-      action: onToggleViewMode,
-      icon: isViewMode ? (
+      title: isEditorModeEnabled ? "Disable Editor Mode" : "Enable Editor Mode",
+      tooltip: isEditorModeEnabled ? "Disable Editor Mode" : "Switch to Editor Mode",
+      action: onToggleEditorMode,
+      extraClass: [
+        "panel-shell__action--editor-mode",
+        isEditorModeEnabled ? "panel-shell__action--active" : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      pressed: isEditorModeEnabled,
+      icon: (
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25ZM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" />
-        </svg>
-      ) : (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5ZM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5Zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3Z" />
         </svg>
       ),
     },
@@ -136,19 +121,14 @@ const Header = ({
       title: "Open in Window",
       tooltip: "Open in window",
       action: onOpenWindow,
-      icon: (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v2H6v8H4V6Zm6 6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-6Zm2 0v6h7v-6h-7Z" />
-        </svg>
-      ),
+      icon: <span className="panel-shell__utility-emoji" aria-hidden="true">🪟</span>,
     },
     {
       id: "saveHtml",
       title: "Save HTML",
       tooltip: "Save HTML",
       action: onSaveHtml,
-      label: "HTML",
-      icon: <span>HTML</span>,
+      icon: <span className="panel-shell__utility-emoji" aria-hidden="true">🧾</span>,
     },
     {
       id: "snapshot",
@@ -156,12 +136,7 @@ const Header = ({
       tooltip: "Save screenshot",
       action: onSnapshot,
       disabled: Boolean(isSnapshotDisabled),
-      label: "Screenshot",
-      icon: (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M8.5 7.5h7l1.2 2H19a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2.3l1.2-2Zm3.5 3.5a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0 2a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z" />
-        </svg>
-      ),
+      icon: <span className="panel-shell__utility-emoji" aria-hidden="true">📸</span>,
     },
     {
       id: "copyImage",
@@ -169,12 +144,7 @@ const Header = ({
       tooltip: "Copy screenshot",
       action: onCopy,
       disabled: Boolean(isSnapshotDisabled),
-      label: "Copy Img",
-      icon: (
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M8 7a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2Zm2 0v9a2 2 0 0 0 2 2h5v2H6V9h2Zm2 0h7v9h-7V7Z" />
-        </svg>
-      ),
+      icon: <span className="panel-shell__utility-emoji" aria-hidden="true">📋</span>,
     },
   ];
 
@@ -204,6 +174,7 @@ const Header = ({
         className={classes}
         type="button"
         aria-label={def.title}
+        aria-pressed={def.pressed === true ? "true" : def.pressed === false ? "false" : undefined}
         data-tooltip={resolveTooltip(def.tooltip)}
         role={inUtilityMenu ? "menuitem" : undefined}
         disabled={buttonDisabled}
@@ -216,7 +187,6 @@ const Header = ({
         }}
       >
         {def.icon}
-        {inUtilityMenu && <span className="panel-shell__utility-label">{def.label}</span>}
       </button>
     );
   };
@@ -226,28 +196,25 @@ const Header = ({
       ref={shellRef}
       className={`panel-shell__bar ${settingsOpen ? "is-settings-open" : ""}`}
     >
-      <div className="panel-shell__bar-center">
-        <div
-          className={`panel-shell__feedback-indicator ${feedbackActive ? "is-active" : ""}`}
-          role="status"
-          aria-live="polite"
-        >
-          <span className="panel-shell__feedback-dot" aria-hidden="true" />
-          <span className="panel-shell__feedback-text">{indicatorMessage}</span>
-        </div>
-      </div>
-      <div className="panel-shell__bar-main panel-shell__bar-main--two-sector">
+      <div
+        className={`panel-shell__bar-main ${rightSlot ? "panel-shell__bar-main--two-sector" : ""}`.trim()}
+      >
         <div className="panel-shell__sector panel-shell__sector--core">
           <div className="panel-shell__actions panel-shell__actions--core">
-            {coreButtonDefs.map((item) =>
-              renderToolbarButton(item, {
-                disabled: settingsOpen,
-              })
-            )}
-          </div>
-        </div>
-        <div className="panel-shell__sector panel-shell__sector--utility-settings">
-          <div className="panel-shell__meta-controls">
+            <button
+              ref={settingsToggleRef}
+              className={`panel-shell__action panel-shell__action--settings ${settingsOpen ? "panel-shell__action--active" : ""}`}
+              type="button"
+              id="prism-settings-toggle"
+              aria-label="Toggle settings"
+              data-tooltip={resolveTooltip("Settings")}
+              aria-expanded={settingsOpen}
+              onClick={toggleSettings}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19.14 12.94a7.38 7.38 0 0 0 .05-.94 7.38 7.38 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.65l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.14 7.14 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.43h-3.84a.5.5 0 0 0-.5.43l-.36 2.54c-.57.23-1.11.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.7 8.83a.5.5 0 0 0 .12.65l2.03 1.58c-.03.31-.05.63-.05.94s.02.63.05.94L2.82 14.52a.5.5 0 0 0-.12.65l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.04.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.43h3.84a.5.5 0 0 0 .5-.43l.36-2.54c.57-.23 1.11-.54 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.65l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z" />
+              </svg>
+            </button>
             <div className="panel-shell__utility-overflow is-visible">
               <button
                 className={`panel-shell__action panel-shell__action--overflow ${utilityMenuOpen ? "panel-shell__action--active" : ""}`}
@@ -272,23 +239,18 @@ const Header = ({
                 </div>
               )}
             </div>
-
-            <button
-              ref={settingsToggleRef}
-              className={`panel-shell__action panel-shell__action--settings ${settingsOpen ? "panel-shell__action--active" : ""}`}
-              type="button"
-              id="prism-settings-toggle"
-              aria-label="Toggle settings"
-              data-tooltip={resolveTooltip("Settings")}
-              aria-expanded={settingsOpen}
-              onClick={toggleSettings}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M19.14 12.94a7.38 7.38 0 0 0 .05-.94 7.38 7.38 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.65l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.14 7.14 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.43h-3.84a.5.5 0 0 0-.5.43l-.36 2.54c-.57.23-1.11.54-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.7 8.83a.5.5 0 0 0 .12.65l2.03 1.58c-.03.31-.05.63-.05.94s.02.63.05.94L2.82 14.52a.5.5 0 0 0-.12.65l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.04.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.43h3.84a.5.5 0 0 0 .5-.43l.36-2.54c.57-.23 1.11-.54 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.65l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z" />
-              </svg>
-            </button>
+            {coreButtonDefs.map((item) =>
+              renderToolbarButton(item, {
+                disabled: settingsOpen,
+              })
+            )}
           </div>
         </div>
+        {rightSlot && (
+          <div className="panel-shell__sector panel-shell__sector--right">
+            <div className="panel-shell__bar-right-slot">{rightSlot}</div>
+          </div>
+        )}
       </div>
       <div
         className={`panel-shell__settings ${settingsOpen ? "is-open" : ""}`}
@@ -296,6 +258,14 @@ const Header = ({
         aria-hidden={settingsOpen ? undefined : "true"}
       >
         <div className="panel-shell__settings-overlay-header">
+          <button
+            type="button"
+            className="panel-shell__settings-close"
+            onClick={() => setSettingsOpen(false)}
+            aria-label="Close settings"
+          >
+            <svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
+          </button>
           <div className="panel-shell__settings-tabs">
             {SETTINGS_TABS.map((tab) => (
               <button
@@ -308,14 +278,6 @@ const Header = ({
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            className="panel-shell__settings-close"
-            onClick={() => setSettingsOpen(false)}
-            aria-label="Close settings"
-          >
-            <svg viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" /></svg>
-          </button>
         </div>
 
         <div className="panel-shell__settings-content">
@@ -339,6 +301,27 @@ const Header = ({
                       onClick={() => onUpdateSetting?.("exportAction", action.id)}
                     >
                       {action.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="panel-shell__setting-row is-stacked">
+                <div className="panel-shell__setting-copy">
+                  <div className="panel-shell__setting-title">Startup Mode</div>
+                  <div className="panel-shell__setting-description">패널 첫 진입 기본 모드</div>
+                </div>
+                <div className="panel-shell__segmented">
+                  {[
+                    { id: "view", label: "View Default" },
+                    { id: "edit", label: "Edit Default" },
+                  ].map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      className={`panel-shell__segment ${startupMode === mode.id ? "is-active" : ""}`}
+                      onClick={() => onUpdateSetting?.("startupMode", mode.id)}
+                    >
+                      {mode.label}
                     </button>
                   ))}
                 </div>

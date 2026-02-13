@@ -41,35 +41,13 @@ body[data-theme="light"] #prism-toast {
 }
 
 body[data-theme="light"] .panel-shell__bar {
-  background: rgba(255, 255, 255, 0.88);
-  border-color: rgba(27, 52, 83, 0.18);
-  box-shadow: 0 14px 30px rgba(17, 36, 58, 0.16);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 body[data-theme="light"] .panel-shell__bar.is-settings-open {
-  box-shadow: 0 16px 34px rgba(17, 36, 58, 0.2);
-}
-
-body[data-theme="light"] .panel-shell__feedback-indicator {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(231, 240, 250, 0.22));
-  border-color: rgba(27, 52, 83, 0.18);
-  color: #203246;
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.3),
-    inset 0 -2px 4px rgba(23, 42, 66, 0.16);
-}
-
-body[data-theme="light"] .panel-shell__feedback-indicator.is-active {
-  border-color: rgba(20, 184, 166, 0.42);
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.2),
-    inset 0 -2px 5px rgba(23, 42, 66, 0.2),
-    0 0 0 1px rgba(20, 184, 166, 0.16);
-}
-
-body[data-theme="light"] .panel-shell__feedback-dot {
-  background: #0f766e;
+  box-shadow: none;
 }
 
 body[data-theme="light"] .panel-shell__meta-divider {
@@ -188,17 +166,14 @@ body[data-theme="light"] .panel-shell__utility-menu-item:hover {
   background: rgba(20, 184, 166, 0.14);
 }
 
-body[data-theme="light"] .notes-island {
+body[data-theme="light"] .notes-island__bar,
+body[data-theme="light"] .notes-island__panel {
   border-color: rgba(27, 52, 83, 0.22);
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 12px 26px rgba(16, 34, 56, 0.2);
 }
 
-body[data-theme="light"] .notes-island.is-expanded {
-  box-shadow: 0 16px 30px rgba(16, 34, 56, 0.24);
-}
-
-body[data-theme="light"] .notes-island.is-expanded .notes-island__panel {
+body[data-theme="light"] .notes-island__panel-header {
   border-bottom-color: rgba(24, 47, 74, 0.12);
 }
 
@@ -246,16 +221,53 @@ body[data-theme="light"] .notes-island__row-delete {
   background: rgba(255, 255, 255, 0.96);
 }
 
-body[data-theme="light"] .panel-shell__command-send,
+body[data-theme="light"] .panel-shell__command-send-inline,
 body[data-theme="light"] .panel-shell__command-input-wrapper {
   border-color: rgba(27, 52, 83, 0.22);
   background: rgba(255, 255, 255, 0.98);
 }
 
+body[data-theme="light"] .panel-shell__command-editor {
+  border-color: rgba(24, 47, 74, 0.14);
+  background: rgba(255, 255, 255, 0.94);
+}
+
 body[data-theme="light"] .panel-shell__command-input {
-  border-color: rgba(24, 47, 74, 0.18);
-  background: rgba(255, 255, 255, 0.95);
   color: #1d2f44;
+}
+
+body[data-theme="light"] .panel-shell__command-target-tag {
+  border-color: rgba(20, 184, 166, 0.36);
+  background: rgba(20, 184, 166, 0.14);
+  color: #0f766e;
+}
+
+body[data-theme="light"] .panel-shell__command-clear-inline {
+  border-color: rgba(24, 47, 74, 0.16);
+  background: rgba(255, 255, 255, 0.96);
+  color: #6a778a;
+}
+
+body[data-theme="light"] .panel-shell__command-help-btn {
+  border-color: rgba(24, 47, 74, 0.16);
+  background: rgba(255, 255, 255, 0.96);
+  color: #6a778a;
+}
+
+body[data-theme="light"] .panel-shell__command-help-popover {
+  border-color: rgba(27, 52, 83, 0.22);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+body[data-theme="light"] .panel-shell__command-help-popover p {
+  color: #2a3f58;
+}
+
+body[data-theme="light"] .panel-shell__command-repair-cta,
+body[data-theme="light"] .panel-shell__command-repair-popover-btn {
+  border-color: rgba(217, 119, 6, 0.36);
+  background: rgba(245, 158, 11, 0.12);
+  color: #9a3412;
 }
 
 body[data-theme="light"] .panel-shell__command-mini {
@@ -387,35 +399,13 @@ body[data-theme="dark"] #prism-capture-flash {
 }
 
 body[data-theme="dark"] .panel-shell__bar {
-  background: rgba(16, 23, 34, 0.9);
-  border-color: rgba(166, 190, 221, 0.18);
-  box-shadow: 0 14px 30px rgba(4, 9, 15, 0.5);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 body[data-theme="dark"] .panel-shell__bar.is-settings-open {
-  box-shadow: 0 18px 36px rgba(4, 9, 15, 0.56);
-}
-
-body[data-theme="dark"] .panel-shell__feedback-indicator {
-  background:
-    linear-gradient(180deg, rgba(163, 186, 219, 0.12), rgba(16, 23, 33, 0.48));
-  border-color: rgba(166, 190, 221, 0.22);
-  color: #dde9f9;
-  box-shadow:
-    inset 0 1px 1px rgba(181, 205, 236, 0.1),
-    inset 0 -2px 5px rgba(2, 8, 14, 0.42);
-}
-
-body[data-theme="dark"] .panel-shell__feedback-indicator.is-active {
-  border-color: rgba(46, 221, 202, 0.54);
-  box-shadow:
-    inset 0 1px 1px rgba(181, 205, 236, 0.08),
-    inset 0 -2px 6px rgba(2, 8, 14, 0.46),
-    0 0 0 1px rgba(46, 221, 202, 0.18);
-}
-
-body[data-theme="dark"] .panel-shell__feedback-dot {
-  background: #5eead4;
+  box-shadow: none;
 }
 
 body[data-theme="dark"] .panel-shell__meta-divider {
@@ -463,7 +453,6 @@ body[data-theme="dark"] .panel-shell__action--pause svg {
 }
 
 body[data-theme="dark"] .panel-shell__action--active {
-  background: rgba(20, 184, 166, 0.24) !important;
   border-color: rgba(46, 221, 202, 0.5) !important;
 }
 
@@ -564,17 +553,14 @@ body[data-theme="dark"] .panel-shell__utility-menu-item:hover {
   background: rgba(20, 184, 166, 0.24);
 }
 
-body[data-theme="dark"] .notes-island {
+body[data-theme="dark"] .notes-island__bar,
+body[data-theme="dark"] .notes-island__panel {
   border-color: rgba(166, 190, 221, 0.2);
   background: rgba(18, 25, 36, 0.97);
   box-shadow: 0 12px 28px rgba(4, 9, 16, 0.56);
 }
 
-body[data-theme="dark"] .notes-island.is-expanded {
-  box-shadow: 0 18px 34px rgba(4, 9, 16, 0.62);
-}
-
-body[data-theme="dark"] .notes-island.is-expanded .notes-island__panel {
+body[data-theme="dark"] .notes-island__panel-header {
   border-bottom-color: rgba(164, 188, 219, 0.14);
 }
 
@@ -638,15 +624,22 @@ body[data-theme="dark"] .notes-island__row-delete:focus-visible:not(:disabled) {
   color: #fecaca;
 }
 
-body[data-theme="dark"] .panel-shell__command-send,
+body[data-theme="dark"] .panel-shell__command-send-inline,
 body[data-theme="dark"] .panel-shell__command-input-wrapper {
   border-color: rgba(166, 190, 221, 0.2);
   background: rgba(18, 25, 36, 0.97);
   box-shadow: 0 12px 28px rgba(4, 9, 16, 0.5);
 }
 
-body[data-theme="dark"] .panel-shell__command-send {
+body[data-theme="dark"] .panel-shell__command-editor {
+  border-color: rgba(164, 188, 219, 0.2);
+  background: rgba(171, 193, 220, 0.08);
+}
+
+body[data-theme="dark"] .panel-shell__command-send-inline {
   color: #5eead4;
+  border-color: rgba(46, 221, 202, 0.46);
+  background: rgba(20, 184, 166, 0.22);
 }
 
 body[data-theme="dark"] .panel-shell__command-line {
@@ -668,9 +661,41 @@ body[data-theme="dark"] .panel-shell__command-mini.danger {
 }
 
 body[data-theme="dark"] .panel-shell__command-input {
-  border-color: rgba(164, 188, 219, 0.2);
-  background: rgba(171, 193, 220, 0.08);
   color: #dde8f8;
+}
+
+body[data-theme="dark"] .panel-shell__command-target-tag {
+  border-color: rgba(94, 234, 212, 0.4);
+  background: rgba(20, 184, 166, 0.22);
+  color: #83f4e5;
+}
+
+body[data-theme="dark"] .panel-shell__command-clear-inline {
+  border-color: rgba(164, 188, 219, 0.22);
+  background: rgba(27, 36, 51, 0.94);
+  color: #a9bad0;
+}
+
+body[data-theme="dark"] .panel-shell__command-help-btn {
+  border-color: rgba(164, 188, 219, 0.22);
+  background: rgba(27, 36, 51, 0.94);
+  color: #a9bad0;
+}
+
+body[data-theme="dark"] .panel-shell__command-help-popover {
+  border-color: rgba(166, 190, 221, 0.2);
+  background: rgba(18, 25, 36, 0.97);
+}
+
+body[data-theme="dark"] .panel-shell__command-help-popover p {
+  color: #cad8ec;
+}
+
+body[data-theme="dark"] .panel-shell__command-repair-cta,
+body[data-theme="dark"] .panel-shell__command-repair-popover-btn {
+  border-color: rgba(251, 191, 36, 0.42);
+  background: rgba(245, 158, 11, 0.2);
+  color: #fde68a;
 }
 
 body[data-theme="dark"] .panel-shell__command-hint {
@@ -678,9 +703,9 @@ body[data-theme="dark"] .panel-shell__command-hint {
 }
 
 body[data-theme="dark"] .panel-shell__command-submit {
-  border-color: rgba(46, 221, 202, 0.46);
-  background: rgba(20, 184, 166, 0.22);
-  color: #7cf0df;
+  border-color: rgba(164, 188, 219, 0.22);
+  background: rgba(27, 36, 51, 0.92);
+  color: #d6e3f5;
 }
 
 body[data-theme="dark"] .panel-shell__notes-menu {

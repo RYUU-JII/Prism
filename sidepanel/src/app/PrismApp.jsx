@@ -10,11 +10,18 @@ import { buildCodeFingerprint, buildExportPrompt } from '../core/prompt/promptCo
 import {
   PATCH_FULL_SYNC_CADENCE_OPTIONS,
   UI_SETTINGS_KEY,
+  VALID_STARTUP_MODES,
   VALID_THEME_MODES,
   DEFAULT_UI_SETTINGS,
   loadUiSettings,
   resolveThemeModeTheme,
 } from '../core/settings/uiSettings.js';
+import {
+  SHORTCUT_HELP_TEXT,
+  isEditableTarget,
+  isModKey,
+  keyEquals,
+} from '../core/settings/shortcuts.js';
 
 const ENABLE_EXPERT_MODE = false;
 const ENABLE_PICKER = true;
@@ -102,6 +109,7 @@ function addPrismLineAttributes(html) {
   let out = "";
   let i = 0;
   let line = 1;
+  let tokenSeq = 1;
   let inScript = false;
   let inStyle = false;
 
@@ -170,12 +178,15 @@ function addPrismLineAttributes(html) {
 
     const tagText = html.slice(i, k + 1);
     const hasLine = /data-prism-line\s*=/.test(tagText);
+    const hasToken = /data-prism-token\s*=/.test(tagText);
     const prefix = html.slice(i + 1, nameStart);
     const rest = html.slice(j, k + 1);
     const isSelfClosing = /\/\s*>$/.test(tagText);
     const tagLower = tagName.toLowerCase();
-    if (!hasLine) {
-      out += `<${prefix}${tagName} data-prism-line="${line}"${rest}`;
+    if (!hasLine || !hasToken) {
+      const lineAttr = !hasLine ? ` data-prism-line="${line}"` : "";
+      const tokenAttr = !hasToken ? ` data-prism-token="n${(tokenSeq++).toString(36)}"` : "";
+      out += `<${prefix}${tagName}${lineAttr}${tokenAttr}${rest}`;
     } else {
       out += tagText;
     }
@@ -215,6 +226,42 @@ function buildContentIdentity(code, language, url) {
   return `${kind}::${source || ""}::${code}`;
 }
 
+function normalizeInstructionToken(token) {
+  const raw = String(token || "").trim();
+  if (!raw) return "";
+  if (!/^[A-Za-z0-9:_-]{1,64}$/.test(raw)) return "";
+  return raw;
+}
+
+function normalizeInstructionValue(value) {
+  if (value && typeof value === "object") {
+    return {
+      memoText: String(value.memoText ?? value.text ?? "").trim(),
+      token: normalizeInstructionToken(value.token),
+    };
+  }
+  return {
+    memoText: String(value || "").trim(),
+    token: "",
+  };
+}
+
+function buildRuntimeInstructionsMap(instructions) {
+  const source = instructions && typeof instructions === "object" ? instructions : {};
+  const out = {};
+  Object.entries(source).forEach(([line, rawValue]) => {
+    const numericLine = Number(line);
+    if (!Number.isFinite(numericLine) || numericLine <= 0) return;
+    const normalized = normalizeInstructionValue(rawValue);
+    if (!normalized.memoText) return;
+    out[String(numericLine)] = {
+      memoText: normalized.memoText,
+      token: normalized.token,
+    };
+  });
+  return out;
+}
+
 const initialInteractionState = {
   pickerActive: true,
   canvasFrozen: false,
@@ -222,6 +269,7 @@ const initialInteractionState = {
   focusToken: 0,
   instructions: {},
   activeInstructionLine: null,
+  activeInstructionToken: null,
   activeElementRect: null,
 };
 
@@ -235,6 +283,7 @@ function interactionReducer(state, action) {
           ...state,
           pickerActive: false,
           activeInstructionLine: null,
+          activeInstructionToken: null,
           activeElementRect: null,
         };
       }
@@ -247,6 +296,7 @@ function interactionReducer(state, action) {
           ...state,
           pickerActive: false,
           activeInstructionLine: null,
+          activeInstructionToken: null,
           activeElementRect: null,
         };
       }
@@ -260,6 +310,12 @@ function interactionReducer(state, action) {
       return { ...state, canvasFrozen: !state.canvasFrozen };
     case "PICKER_SELECT": {
       const line = Number(action.line) || 1;
+      const nextToken = normalizeInstructionToken(action.token);
+      const currentForLine = normalizeInstructionValue(state.instructions[String(line)]);
+      const activeTokenForLine =
+        state.activeInstructionLine === line
+          ? normalizeInstructionToken(state.activeInstructionToken)
+          : "";
       return {
         ...state,
         pickerActive:
@@ -267,6 +323,7 @@ function interactionReducer(state, action) {
         focusLine: line,
         focusToken: state.focusToken + 1,
         activeInstructionLine: line,
+        activeInstructionToken: nextToken || activeTokenForLine || currentForLine.token || null,
         activeElementRect: action.rect || null,
       };
     }
@@ -274,10 +331,22 @@ function interactionReducer(state, action) {
       const line = state.activeInstructionLine;
       const text = (action.text || "").trim();
       if (!line || !text) return state;
+      const key = String(line);
+      const existing = normalizeInstructionValue(state.instructions[key]);
+      const nextToken = normalizeInstructionToken(
+        action.token || state.activeInstructionToken || existing.token
+      );
       return {
         ...state,
-        instructions: { ...state.instructions, [line]: text },
+        instructions: {
+          ...state.instructions,
+          [line]: {
+            memoText: text,
+            token: nextToken,
+          },
+        },
         activeInstructionLine: null,
+        activeInstructionToken: null,
         activeElementRect: null,
       };
     }
@@ -290,6 +359,7 @@ function interactionReducer(state, action) {
         ...state,
         instructions: nextInstructions,
         activeInstructionLine: null,
+        activeInstructionToken: null,
         activeElementRect: null,
       };
     }
@@ -305,6 +375,7 @@ function interactionReducer(state, action) {
         ...state,
         instructions: nextInstructions,
         activeInstructionLine: shouldClearActive ? null : state.activeInstructionLine,
+        activeInstructionToken: shouldClearActive ? null : state.activeInstructionToken,
         activeElementRect: shouldClearActive ? null : state.activeElementRect,
       };
     }
@@ -313,27 +384,48 @@ function interactionReducer(state, action) {
         ...state,
         instructions: {},
         activeInstructionLine: null,
+        activeInstructionToken: null,
         activeElementRect: null,
       };
     case "SET_INSTRUCTIONS": {
-      const nextInstructions =
+      const rawInstructions =
         action.instructions && typeof action.instructions === "object"
           ? action.instructions
           : {};
+      const nextInstructions = {};
+      Object.entries(rawInstructions).forEach(([key, rawValue]) => {
+        const line = Number(key);
+        if (!Number.isFinite(line) || line <= 0) return;
+        const normalized = normalizeInstructionValue(rawValue);
+        if (!normalized.memoText) return;
+        nextInstructions[String(line)] = {
+          memoText: normalized.memoText,
+          token: normalized.token,
+        };
+      });
       const activeLine = Number(state.activeInstructionLine);
       const keepActive =
         Number.isFinite(activeLine) &&
         activeLine > 0 &&
         Object.prototype.hasOwnProperty.call(nextInstructions, String(activeLine));
+      const activeValue = keepActive
+        ? normalizeInstructionValue(nextInstructions[String(activeLine)])
+        : { memoText: "", token: "" };
       return {
         ...state,
         instructions: nextInstructions,
         activeInstructionLine: keepActive ? activeLine : null,
+        activeInstructionToken: keepActive ? activeValue.token || null : null,
         activeElementRect: keepActive ? state.activeElementRect : null,
       };
     }
     case "CLEAR_SELECTION":
-      return { ...state, activeInstructionLine: null, activeElementRect: null };
+      return {
+        ...state,
+        activeInstructionLine: null,
+        activeInstructionToken: null,
+        activeElementRect: null,
+      };
     default:
       return state;
   }
@@ -342,8 +434,12 @@ function interactionReducer(state, action) {
 function PrismApp() {
   const [latestPayload, setLatestPayload] = useState(null);
   const [expertMode, setExpertMode] = useState(false);
-  const [isViewMode, setIsViewMode] = useState(false);
-  const [uiSettings, setUiSettings] = useState(() => loadUiSettings());
+  const [initialUiSettings] = useState(() => loadUiSettings());
+  const [uiSettings, setUiSettings] = useState(initialUiSettings);
+  const [isEditorModeEnabled, setIsEditorModeEnabled] = useState(
+    () => (initialUiSettings?.startupMode || "view") === "edit"
+  );
+  const [globalMemoText, setGlobalMemoText] = useState("");
   const [interactionState, dispatchInteraction] = useReducer(
     interactionReducer,
     initialInteractionState
@@ -351,16 +447,19 @@ function PrismApp() {
   const [runtimeCapabilities, setRuntimeCapabilities] = useState(() => DEFAULT_RUNTIME_CAPABILITIES);
   const [previewInstructionLine, setPreviewInstructionLine] = useState(null);
   const [notesPulseToken, setNotesPulseToken] = useState(0);
+  const [repairNudgeToken, setRepairNudgeToken] = useState(0);
   const {
     pickerActive,
     focusLine,
     focusToken,
     instructions,
     activeInstructionLine,
+    activeInstructionToken,
     canvasFrozen,
   } = interactionState;
 
   const viewerRef = useRef(null);
+  const panelShellRef = useRef(null);
   const viewerReadyRef = useRef(false);
   const pendingPayloadRef = useRef(null);
   const pendingUiStateRef = useRef(null);
@@ -385,22 +484,56 @@ function PrismApp() {
     () => resolveThemeModeTheme(uiSettings.themeMode, latestPayload?.theme),
     [uiSettings.themeMode, latestPayload?.theme]
   );
-  const instructionEntries = useMemo(() => {
+  const runtimeInstructions = useMemo(
+    () => buildRuntimeInstructionsMap(instructions),
+    [instructions]
+  );
+  const targetedInstructionEntries = useMemo(() => {
     const codeLines = String(latestPayload?.code || "").split("\n");
     return Object.entries(instructions)
-      .map(([line, memoText]) => {
+      .map(([line, rawValue]) => {
         const numericLine = Number(line) || 1;
+        const normalized = normalizeInstructionValue(rawValue);
+        if (!normalized.memoText) return null;
         return {
           line: numericLine,
-          memoText: String(memoText || ""),
+          memoText: normalized.memoText,
+          token: normalized.token,
           sourceLineText: codeLines[numericLine - 1] || "",
         };
       })
+      .filter(Boolean)
       .sort((a, b) => a.line - b.line);
   }, [instructions, latestPayload?.code]);
+  const globalInstructionEntry = useMemo(() => {
+    const memo = String(globalMemoText || "").trim();
+    if (!memo) return null;
+    return {
+      line: 0,
+      memoText: memo,
+      token: "global",
+      sourceLineText: "",
+      isGlobal: true,
+    };
+  }, [globalMemoText]);
+  const instructionEntries = useMemo(() => {
+    if (!globalInstructionEntry) return targetedInstructionEntries;
+    return [globalInstructionEntry, ...targetedInstructionEntries];
+  }, [globalInstructionEntry, targetedInstructionEntries]);
+  const targetedInstructionCount = targetedInstructionEntries.length;
   const instructionCount = instructionEntries.length;
   const selectedLine = Number(activeInstructionLine) || null;
-  const selectedMemoText = selectedLine ? instructions[String(selectedLine)] || "" : "";
+  const selectedInstruction =
+    selectedLine
+      ? normalizeInstructionValue(instructions[String(selectedLine)])
+      : { memoText: String(globalMemoText || "").trim(), token: "" };
+  const selectedInstructionToken = useMemo(() => {
+    const direct = normalizeInstructionToken(activeInstructionToken);
+    if (direct) return direct;
+    if (!selectedLine) return "";
+    return normalizeInstructionValue(instructions[String(selectedLine)]).token;
+  }, [activeInstructionToken, instructions, selectedLine]);
+  const selectedMemoText = selectedInstruction.memoText || "";
   const isHtmlPayload = latestPayload?.language === "html";
   const isPickerDisabled =
     !ENABLE_PICKER ||
@@ -419,21 +552,9 @@ function PrismApp() {
     instructionCount === 0;
   const pickerEnabledForRuntime = Boolean(
     ENABLE_PICKER &&
-      !isViewMode &&
       !isPickerDisabled &&
       pickerActive
   );
-  const feedbackIdleMessage = useMemo(() => {
-    if (isViewMode) return "뷰 모드";
-    if (canvasFrozen) return "일시정지";
-    if (!isHtmlPayload) return "HTML 대기중";
-    if (pickerEnabledForRuntime) return "피커 활성";
-    if (instructionCount > 0) return `메모 ${instructionCount}개`;
-    return "대기중";
-  }, [canvasFrozen, instructionCount, isHtmlPayload, isViewMode, pickerEnabledForRuntime]);
-  const feedbackMessage =
-    toast?.isVisible && toast.message ? toast.message : feedbackIdleMessage;
-
   const { targetTabId, isWindowMode } = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return {
@@ -443,6 +564,7 @@ function PrismApp() {
   }, []);
 
   const [windowHintVisible, setWindowHintVisible] = useState(false);
+  const [commandBarMaxWidthPx, setCommandBarMaxWidthPx] = useState(null);
 
   useEffect(() => {
     latestPayloadRef.current = latestPayload;
@@ -467,6 +589,33 @@ function PrismApp() {
       document.body.classList.remove("prism-window");
     };
   }, [isWindowMode]);
+
+  useEffect(() => {
+    const panelEl = panelShellRef.current;
+    if (!panelEl) return undefined;
+
+    const setHalfWidth = () => {
+      const width = Number(panelEl.clientWidth) || 0;
+      if (width <= 0) return;
+      setCommandBarMaxWidthPx(Math.round(width * 0.5));
+    };
+
+    setHalfWidth();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", setHalfWidth);
+      return () => {
+        window.removeEventListener("resize", setHalfWidth);
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      setHalfWidth();
+    });
+    observer.observe(panelEl);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const flashCapture = useCallback(() => {
     const el = flashRef.current;
@@ -498,18 +647,22 @@ function PrismApp() {
       type: "PRISM_UI_STATE",
       pickerActive: pickerEnabledForRuntime,
       frozen: Boolean(canvasFrozen),
-      instructions,
-      instructionsCount: instructionCount,
-      previewLine: isViewMode ? null : previewInstructionLine,
+      instructions: runtimeInstructions,
+      instructionsCount: targetedInstructionCount,
+      previewLine: isEditorModeEnabled ? previewInstructionLine : null,
       editingLine:
-        !isViewMode && Number.isFinite(selectedLine) && selectedLine > 0
+        isEditorModeEnabled && Number.isFinite(selectedLine) && selectedLine > 0
           ? selectedLine
+          : null,
+      editingToken:
+        isEditorModeEnabled && Number.isFinite(selectedLine) && selectedLine > 0
+          ? selectedInstructionToken || null
           : null,
       settings: uiSettings,
       autoImportResponse: Boolean(uiSettings.autoImportResponse),
-      isViewMode: Boolean(isViewMode),
+      isViewMode: !isEditorModeEnabled,
     };
-  }, [canvasFrozen, instructionCount, instructions, isViewMode, pickerEnabledForRuntime, previewInstructionLine, selectedLine, uiSettings]);
+  }, [canvasFrozen, isEditorModeEnabled, pickerEnabledForRuntime, previewInstructionLine, runtimeInstructions, selectedInstructionToken, selectedLine, targetedInstructionCount, uiSettings]);
 
   const sendUiState = useCallback((payloadOverride) => {
     const viewer = viewerRef.current;
@@ -549,13 +702,16 @@ function PrismApp() {
   const applyInstructionPolicyForContentChange = useCallback((nextCode) => {
     const currentInstructions = instructionsRef.current || {};
     const instructionKeys = Object.keys(currentInstructions);
-    if (instructionKeys.length === 0) return;
+    const hasGlobalMemo = Boolean(String(globalMemoText || "").trim());
+    if (instructionKeys.length === 0 && !hasGlobalMemo) return;
     if (uiSettings.memoResetPolicy === "on_code_change") {
       dispatchInteraction({ type: "CLEAR_INSTRUCTIONS" });
+      setGlobalMemoText("");
       setPreviewInstructionLine(null);
       showToast("코드 변경으로 메모가 초기화되었습니다.");
       return;
     }
+    if (instructionKeys.length === 0) return;
 
     const maxLine = Math.max(1, String(nextCode || "").split("\n").length);
     const nextInstructions = {};
@@ -572,7 +728,7 @@ function PrismApp() {
       prev && Object.prototype.hasOwnProperty.call(nextInstructions, String(prev)) ? prev : null
     );
     showToast(`코드 변경으로 ${removedCount}개 메모가 정리되었습니다.`);
-  }, [showToast, uiSettings.memoResetPolicy]);
+  }, [globalMemoText, showToast, uiSettings.memoResetPolicy]);
 
   const updateViewer = useCallback((code, language, url, sourceTheme) => {
     const resolvedTheme = resolveThemeModeTheme(uiSettings.themeMode, sourceTheme);
@@ -804,12 +960,12 @@ function PrismApp() {
   }, [isPickerDisabled, pickerActive]);
 
   useEffect(() => {
-    if (isViewMode) return;
+    if (!isEditorModeEnabled) return;
     if (isPickerDisabled) return;
     if (!isHtmlPayload) return;
     if (pickerActive) return;
     dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: true });
-  }, [isHtmlPayload, isPickerDisabled, isViewMode, pickerActive]);
+  }, [isHtmlPayload, isPickerDisabled, isEditorModeEnabled, pickerActive]);
 
   useEffect(() => {
     if (isFreezeDisabled && canvasFrozen) {
@@ -830,10 +986,10 @@ function PrismApp() {
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: "PRISM_SET_VIEW_MODE", enabled: isViewMode });
+        chrome.tabs.sendMessage(tabs[0].id, { type: "PRISM_SET_VIEW_MODE", enabled: !isEditorModeEnabled });
       }
     });
-  }, [isViewMode]);
+  }, [isEditorModeEnabled]);
 
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -861,13 +1017,16 @@ function PrismApp() {
       if (data.type === "PRISM_PICKER_SELECT") {
         if (!ENABLE_PICKER) return;
         const line = Number(data.line) || 1;
-        if (Number(activeInstructionLine) === line) {
+        const nextToken = normalizeInstructionToken(data.token);
+        const currentToken = normalizeInstructionToken(activeInstructionToken);
+        if (Number(activeInstructionLine) === line && currentToken === nextToken) {
           dispatchInteraction({ type: "CLEAR_SELECTION" });
           return;
         }
         dispatchInteraction({
           type: "PICKER_SELECT",
           line,
+          token: nextToken,
           rect: data.rect || null,
           keepPickerActiveAfterSelect: uiSettings.keepPickerActiveAfterSelect,
         });
@@ -946,7 +1105,7 @@ function PrismApp() {
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [activeInstructionLine, pickerActive, returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
+  }, [activeInstructionLine, activeInstructionToken, pickerActive, returnToSourceTab, showToast, uiSettings.keepPickerActiveAfterSelect]);
 
   const handleSnapshot = useCallback((action = "download") => {
     const viewer = viewerRef.current;
@@ -1004,43 +1163,91 @@ function PrismApp() {
   const handleAddMemoFromCommandBar = useCallback((text) => {
     const lineNumber = Number(activeInstructionLine) || null;
     const nextText = (text || "").trim();
-    if (!lineNumber || !nextText) return false;
-    dispatchInteraction({ type: "PICKER_SELECT", line: lineNumber, keepPickerActiveAfterSelect: true });
-    dispatchInteraction({ type: "SAVE_ACTIVE_INSTRUCTION", text: nextText });
+    if (!nextText) return false;
+    if (lineNumber) {
+      dispatchInteraction({ type: "PICKER_SELECT", line: lineNumber, keepPickerActiveAfterSelect: true });
+      dispatchInteraction({ type: "SAVE_ACTIVE_INSTRUCTION", text: nextText });
+      showToast(`Line ${lineNumber} 메모 저장됨`);
+    } else {
+      setGlobalMemoText(nextText);
+      showToast("라인 미지정 메모 저장됨");
+    }
     setNotesPulseToken((prev) => prev + 1);
-    showToast(`Line ${lineNumber} 메모 저장됨`);
     return true;
   }, [activeInstructionLine, showToast]);
 
   const handleRemoveMemoFromCommandBar = useCallback(() => {
     const lineNumber = Number(activeInstructionLine) || null;
-    if (!lineNumber) return;
-    dispatchInteraction({ type: "PICKER_SELECT", line: lineNumber, keepPickerActiveAfterSelect: true });
-    dispatchInteraction({ type: "REMOVE_ACTIVE_INSTRUCTION" });
-    showToast(`Line ${lineNumber} 메모 삭제됨`);
-  }, [activeInstructionLine, showToast]);
+    if (lineNumber) {
+      dispatchInteraction({ type: "PICKER_SELECT", line: lineNumber, keepPickerActiveAfterSelect: true });
+      dispatchInteraction({ type: "REMOVE_ACTIVE_INSTRUCTION" });
+      showToast(`Line ${lineNumber} 메모 삭제됨`);
+      return;
+    }
+    if (!String(globalMemoText || "").trim()) return;
+    setGlobalMemoText("");
+    showToast("라인 미지정 메모 삭제됨");
+  }, [activeInstructionLine, globalMemoText, showToast]);
 
   const handleInstructionHover = useCallback((line) => {
     setPreviewInstructionLine(line);
   }, []);
 
-  const handleInstructionSelect = useCallback((line) => {
-    const numericLine = Number(line);
-    if (!Number.isFinite(numericLine) || numericLine <= 0) return;
-    dispatchInteraction({ type: "PICKER_SELECT", line: numericLine, keepPickerActiveAfterSelect: true });
+  const handleInstructionSelect = useCallback((payload) => {
+    const numericLine =
+      payload && typeof payload === "object"
+        ? Number(payload.line)
+        : Number(payload);
+    if (!Number.isFinite(numericLine) || numericLine < 0) return;
+    if (numericLine === 0) {
+      dispatchInteraction({ type: "CLEAR_SELECTION" });
+      return;
+    }
+    const token =
+      payload && typeof payload === "object"
+        ? normalizeInstructionToken(payload.token)
+        : "";
+    dispatchInteraction({
+      type: "PICKER_SELECT",
+      line: numericLine,
+      token,
+      keepPickerActiveAfterSelect: true,
+    });
     const viewer = viewerRef.current;
     if (viewer?.contentWindow) {
       viewer.contentWindow.postMessage(
-        { type: "PRISM_INSTRUCTION_NAVIGATE", line: numericLine, behavior: "smooth" },
+        {
+          type: "PRISM_INSTRUCTION_NAVIGATE",
+          line: numericLine,
+          token,
+          behavior: "smooth",
+        },
         "*"
       );
     }
   }, []);
 
-  const handleInstructionDelete = useCallback((line) => {
-    const numericLine = Number(line);
-    if (!Number.isFinite(numericLine) || numericLine <= 0) return;
-    dispatchInteraction({ type: "PICKER_SELECT", line: numericLine, keepPickerActiveAfterSelect: true });
+  const handleInstructionDelete = useCallback((payload) => {
+    const numericLine =
+      payload && typeof payload === "object"
+        ? Number(payload.line)
+        : Number(payload);
+    if (!Number.isFinite(numericLine) || numericLine < 0) return;
+    if (numericLine === 0) {
+      setGlobalMemoText("");
+      showToast("라인 미지정 메모 삭제됨");
+      return;
+    }
+    const token =
+      payload && typeof payload === "object"
+        ? normalizeInstructionToken(payload.token)
+        : "";
+    dispatchInteraction({
+      type: "PICKER_SELECT",
+      line: numericLine,
+      token,
+      keepPickerActiveAfterSelect: true,
+    });
     dispatchInteraction({ type: "REMOVE_ACTIVE_INSTRUCTION" });
     showToast(`Line ${numericLine} 메모 삭제됨`);
   }, [showToast]);
@@ -1048,6 +1255,7 @@ function PrismApp() {
   const handleClearAllInstructions = useCallback(() => {
     if (instructionCount === 0) return;
     dispatchInteraction({ type: "CLEAR_INSTRUCTIONS" });
+    setGlobalMemoText("");
     setPreviewInstructionLine(null);
     showToast("모든 메모가 삭제되었습니다.");
   }, [instructionCount, showToast]);
@@ -1097,6 +1305,21 @@ function PrismApp() {
     const entries = Array.isArray(options.instructionEntries)
       ? options.instructionEntries.map((entry) => ({ ...entry }))
       : instructionEntries.map((entry) => ({ ...entry }));
+    const selectedTargetFromOptions =
+      options.selectedTarget && typeof options.selectedTarget === "object"
+        ? options.selectedTarget
+        : null;
+    const selectedTarget =
+      selectedTargetFromOptions ||
+      (
+        Number.isFinite(selectedLine) &&
+        selectedLine > 0
+          ? {
+              line: selectedLine,
+              token: selectedInstructionToken || "",
+            }
+          : null
+      );
     const settingsSnapshot =
       options.settings && typeof options.settings === "object"
         ? { ...options.settings }
@@ -1131,6 +1354,7 @@ function PrismApp() {
       settings: settingsSnapshot,
       forceFullSync,
       recoveryHint,
+      activeSelection: selectedTarget,
     });
     if (!promptBundle.prompt) return false;
 
@@ -1168,6 +1392,7 @@ function PrismApp() {
 
       if (!keepMemos && settingsSnapshot.memoResetPolicy === "on_copy") {
         dispatchInteraction({ type: "CLEAR_INSTRUCTIONS" });
+        setGlobalMemoText("");
         setPreviewInstructionLine(null);
       }
 
@@ -1190,6 +1415,7 @@ function PrismApp() {
         createdAt: Date.now(),
         payload: { ...payload },
         instructionEntries: entries.map((entry) => ({ ...entry })),
+        selectedTarget: selectedTarget ? { ...selectedTarget } : null,
         settings: { ...settingsSnapshot, aiResponseMode: promptBundle.resolvedResponseMode },
         baseFingerprint: promptBundle.baseFingerprint,
         retryUsed: Boolean(options.isRetry),
@@ -1210,7 +1436,7 @@ function PrismApp() {
     }
 
     return applyPostExportState();
-  }, [instructionEntries, sendPromptToActiveTab, showToast, uiSettings]);
+  }, [instructionEntries, selectedInstructionToken, selectedLine, sendPromptToActiveTab, showToast, uiSettings]);
 
   useEffect(() => {
     if (typeof chrome === "undefined" || !chrome.runtime?.onMessage) return undefined;
@@ -1280,11 +1506,13 @@ function PrismApp() {
       const snapshot = lastExportSnapshotRef.current;
       if (!snapshot || snapshot.retryUsed) {
         pendingFullSyncRef.current = true;
+        triggerRepairNudge();
         showToast(`Smart Patch 거부됨 (${reasonText})`);
         return;
       }
       if (now - Number(snapshot.createdAt || 0) > 10 * 60 * 1000) {
         pendingFullSyncRef.current = true;
+        triggerRepairNudge();
         showToast(`Smart Patch 거부됨 (${reasonText}) - 이전 컨텍스트 만료`);
         return;
       }
@@ -1292,6 +1520,7 @@ function PrismApp() {
       const retryKey = `${snapshot.baseFingerprint || ""}|${reason}|${shouldEscalateToFull ? "full" : "patch"}`;
       if (lastAutoRetryKeyRef.current === retryKey) {
         pendingFullSyncRef.current = true;
+        triggerRepairNudge();
         showToast(`Smart Patch 거부됨 (${reasonText})`);
         return;
       }
@@ -1304,6 +1533,7 @@ function PrismApp() {
       handleExportPrompt({
         payload: snapshot.payload,
         instructionEntries: snapshot.instructionEntries,
+        selectedTarget: snapshot.selectedTarget,
         settings: snapshot.settings,
         forceFullSync: shouldEscalateToFull,
         recoveryHint,
@@ -1318,6 +1548,7 @@ function PrismApp() {
       }).then((retried) => {
         if (!retried) {
           pendingFullSyncRef.current = true;
+          triggerRepairNudge();
           showToast(`Smart Patch 거부됨 (${reasonText}) - 자동 재시도 실패`);
         }
       });
@@ -1327,7 +1558,7 @@ function PrismApp() {
     return () => {
       chrome.runtime.onMessage.removeListener(handlePatchReject);
     };
-  }, [handleExportPrompt, showToast, uiSettings.retryFullSyncOnReject]);
+  }, [handleExportPrompt, showToast, triggerRepairNudge, uiSettings.retryFullSyncOnReject]);
 
   const handleOpenWindow = useCallback(() => {
     const payload = latestPayloadRef.current;
@@ -1360,10 +1591,10 @@ function PrismApp() {
     setExpertMode((prev) => !prev);
   }, []);
 
-  const handleToggleViewMode = useCallback(() => {
-    setIsViewMode((prev) => {
+  const handleToggleEditorMode = useCallback(() => {
+    setIsEditorModeEnabled((prev) => {
       const next = !prev;
-      showToast(next ? "뷰 모드로 전환됨" : "편집 모드로 전환됨");
+      showToast(next ? "편집 모드가 활성화되었습니다" : "편집 모드가 비활성화되었습니다");
       return next;
     });
   }, [showToast]);
@@ -1375,7 +1606,107 @@ function PrismApp() {
       return;
     }
     dispatchInteraction({ type: "TOGGLE_FROZEN" });
-  }, [isFreezeDisabled, runtimeCapabilities?.reasons?.freeze, showToast]);
+    showToast(canvasFrozen ? "재생 재개됨" : "일시정지됨");
+  }, [canvasFrozen, isFreezeDisabled, runtimeCapabilities?.reasons?.freeze, showToast]);
+
+  const triggerRepairNudge = useCallback(() => {
+    setRepairNudgeToken((prev) => prev + 1);
+  }, []);
+
+  const handleRequestFullCodeRepair = useCallback(async () => {
+    const confirmed = window.confirm("자동 복구에 실패했습니다. Full Code 요청으로 강제 전송할까요?");
+    if (!confirmed) return;
+    await handleExportPrompt({
+      forceFullSync: true,
+      actionOverride: "send",
+      skipClipboard: true,
+      keepMemos: true,
+      toastMessage: "Repair 요청: Full Code 전송됨",
+    });
+  }, [handleExportPrompt]);
+
+  const handleTogglePickerShortcut = useCallback(() => {
+    if (isPickerDisabled) {
+      const reason = runtimeCapabilities?.reasons?.picker || "현재 상태에서는 피커를 사용할 수 없습니다.";
+      showToast(reason);
+      return;
+    }
+    dispatchInteraction({
+      type: "TOGGLE_PICKER",
+      autoPause: uiSettings?.pickerAutoPause !== false,
+    });
+    showToast(pickerActive ? "피커 비활성화됨" : "피커 활성화됨");
+  }, [
+    isPickerDisabled,
+    pickerActive,
+    runtimeCapabilities?.reasons?.picker,
+    showToast,
+    uiSettings?.pickerAutoPause,
+  ]);
+
+  const handleShowShortcutHelp = useCallback(() => {
+    showToast(`Shortcuts: ${SHORTCUT_HELP_TEXT}`);
+  }, [showToast]);
+
+  useEffect(() => {
+    if (isWindowMode) return undefined;
+
+    const handleGlobalShortcut = (event) => {
+      const mod = isModKey(event);
+      const shift = Boolean(event.shiftKey);
+      const alt = Boolean(event.altKey);
+      const isEditable = isEditableTarget(event.target);
+
+      if (!mod) {
+        if (isEditable) return;
+        if (!shift && !alt && keyEquals(event, "p")) {
+          event.preventDefault();
+          handleTogglePickerShortcut();
+        }
+        return;
+      }
+
+      if (!shift && !alt && keyEquals(event, "/")) {
+        event.preventDefault();
+        handleShowShortcutHelp();
+        return;
+      }
+      if (shift && !alt && keyEquals(event, "p")) {
+        event.preventDefault();
+        handleFreezeToggle();
+        return;
+      }
+      if (shift && !alt && keyEquals(event, "v")) {
+        event.preventDefault();
+        handleToggleEditorMode();
+        return;
+      }
+      if (shift && !alt && keyEquals(event, "x")) {
+        event.preventDefault();
+        handleClearAllInstructions();
+        return;
+      }
+
+      if (isEditable) return;
+      if (!shift && !alt && keyEquals(event, "Enter")) {
+        event.preventDefault();
+        handleExportPrompt();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalShortcut);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalShortcut);
+    };
+  }, [
+    handleClearAllInstructions,
+    handleExportPrompt,
+    handleFreezeToggle,
+    handleShowShortcutHelp,
+    handleTogglePickerShortcut,
+    handleToggleEditorMode,
+    isWindowMode,
+  ]);
 
   const handleToggleSetting = useCallback((key) => {
     setUiSettings((prev) => ({
@@ -1413,6 +1744,15 @@ function PrismApp() {
           patchFullSyncEvery: nextValue,
         };
       }
+      if (key === "startupMode") {
+        const nextMode = VALID_STARTUP_MODES.includes(String(value))
+          ? String(value)
+          : DEFAULT_UI_SETTINGS.startupMode;
+        return {
+          ...prev,
+          startupMode: nextMode,
+        };
+      }
       return {
         ...prev,
         [key]: value,
@@ -1445,7 +1785,7 @@ function PrismApp() {
   }
 
   return (
-    <div className={`panel-shell ${isViewMode ? "is-view-mode" : ""}`}>
+    <div className="panel-shell" ref={panelShellRef}>
       <div className="viewer-container">
         <div className="viewer-frame">
           <div className="panel-shell__virtual-top">
@@ -1463,10 +1803,20 @@ function PrismApp() {
               onUpdateSetting={handleUpdateSetting}
               themeMode={uiSettings.themeMode}
               onThemeModeChange={handleThemeModeChange}
-              isViewMode={isViewMode}
-              onToggleViewMode={handleToggleViewMode}
-              feedbackMessage={feedbackMessage}
-              feedbackActive={Boolean(toast?.isVisible)}
+              isEditorModeEnabled={isEditorModeEnabled}
+              onToggleEditorMode={handleToggleEditorMode}
+              rightSlot={
+                <NotesIsland
+                  instructionEntries={instructionEntries}
+                  instructionCount={instructionCount}
+                  canvasFrozen={canvasFrozen}
+                  pulseToken={notesPulseToken}
+                  onInstructionHover={handleInstructionHover}
+                  onInstructionSelect={handleInstructionSelect}
+                  onInstructionDelete={handleInstructionDelete}
+                  onClearAllInstructions={handleClearAllInstructions}
+                />
+              }
             />
           </div>
           <Viewer ref={viewerRef} onReady={handleViewerReady} />
@@ -1475,36 +1825,21 @@ function PrismApp() {
             ref={flashRef}
             onAnimationEnd={handleFlashAnimationEnd}
           />
-          {!isViewMode && (
-            <div className="panel-shell__virtual-bottom">
-              <CommandBar
-                onSend={handleExportPrompt}
-                onAddMemo={handleAddMemoFromCommandBar}
-                onRemoveMemo={handleRemoveMemoFromCommandBar}
-                onClearSelection={handleClearSelection}
-                selectedLine={selectedLine}
-                selectedMemoText={selectedMemoText}
-                selectionToken={focusToken}
-                isPickerActive={pickerActive}
-                isInputDisabled={isPickerDisabled}
-                isExportDisabled={isExportPromptDisabled}
-                memoCount={instructionCount}
-                rightSlot={
-                  <NotesIsland
-                    instructionEntries={instructionEntries}
-                    instructionCount={instructionCount}
-                    pickerActive={pickerActive}
-                    canvasFrozen={canvasFrozen}
-                    pulseToken={notesPulseToken}
-                    onInstructionHover={handleInstructionHover}
-                    onInstructionSelect={handleInstructionSelect}
-                    onInstructionDelete={handleInstructionDelete}
-                    onClearAllInstructions={handleClearAllInstructions}
-                  />
-                }
-              />
-            </div>
-          )}
+          <div className="panel-shell__virtual-bottom">
+            <CommandBar
+              onSend={handleExportPrompt}
+              onRequestRepair={handleRequestFullCodeRepair}
+              onAddMemo={handleAddMemoFromCommandBar}
+              onRemoveMemo={handleRemoveMemoFromCommandBar}
+              onClearSelection={handleClearSelection}
+              selectedLine={selectedLine}
+              selectedMemoText={selectedMemoText}
+              selectionToken={focusToken}
+              isExportDisabled={isExportPromptDisabled}
+              maxWidthPx={commandBarMaxWidthPx}
+              repairNudgeToken={repairNudgeToken}
+            />
+          </div>
         </div>
       </div>
       {ENABLE_EXPERT_MODE && expertMode && (
@@ -1521,3 +1856,4 @@ function PrismApp() {
 }
 
 export default PrismApp;
+

@@ -1,4 +1,29 @@
 export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
+      function normalizeNavigateToken(token) {
+        if (typeof normalizeInstructionTokenValue === "function") {
+          return normalizeInstructionTokenValue(token);
+        }
+        const raw = String(token || "").trim();
+        if (!raw) return "";
+        if (!/^[A-Za-z0-9:_-]{1,64}$/.test(raw)) return "";
+        return raw;
+      }
+
+      function resolveInstructionTokenForSelection(line, target, preferredToken) {
+        const lineTarget = getLineTarget(target) || target;
+        if (typeof getTargetToken === "function") {
+          const targetToken = getTargetToken(lineTarget);
+          if (targetToken) return targetToken;
+        }
+        const normalizedPreferred = normalizeNavigateToken(preferredToken);
+        if (normalizedPreferred) return normalizedPreferred;
+        if (typeof getInstructionTokenForLine === "function") {
+          const tokenFromLine = normalizeNavigateToken(getInstructionTokenForLine(line));
+          if (tokenFromLine) return tokenFromLine;
+        }
+        return "";
+      }
+
       function postNavigateMiss(line, reason) {
         try {
           parent.postMessage(
@@ -12,17 +37,19 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         } catch (err) {}
       }
 
-      function emitNavigateSelection(line, target) {
+      function emitNavigateSelection(line, target, preferredToken) {
         if (!target || !target.getBoundingClientRect) {
           postNavigateMiss(line, "吏?뺥븳 硫붾え ????붿냼瑜?李얠? 紐삵뻽?듬땲??");
           return;
         }
         const rect = target.getBoundingClientRect();
+        const token = resolveInstructionTokenForSelection(line, target, preferredToken);
         try {
           parent.postMessage(
             {
               type: "PRISM_PICKER_SELECT",
               line: Number(line) || 1,
+              token,
               rect: {
                 top: rect.top,
                 left: rect.left,
@@ -35,14 +62,18 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         } catch (err) {}
       }
 
-      function navigateToInstruction(line, behavior) {
+      function navigateToInstruction(line, behavior, token) {
         const numericLine = Number(line);
         if (!Number.isFinite(numericLine) || numericLine <= 0) {
           postNavigateMiss(line, "?섎せ??硫붾え ?쇱씤?낅땲??");
           return;
         }
 
-        const target = document.querySelector('[data-prism-line="' + numericLine + '"]');
+        const preferredToken = normalizeNavigateToken(token);
+        const target =
+          typeof getBestElementForLine === "function"
+            ? getBestElementForLine(numericLine, preferredToken)
+            : document.querySelector('[data-prism-line="' + numericLine + '"]');
         if (!target) {
           postNavigateMiss(numericLine, "?대떦 ?쇱씤???붿냼媛 ?꾩옱 肄붾뱶???놁뒿?덈떎.");
           return;
@@ -62,20 +93,28 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
           } catch (_) {}
         }
 
+        const resolveCurrentTarget = function() {
+          if (typeof getBestElementForLine === "function") {
+            const next = getBestElementForLine(numericLine, preferredToken);
+            if (next) return next;
+          }
+          return target;
+        };
+
         if (scrollBehavior === "smooth") {
           window.setTimeout(function() {
-            emitNavigateSelection(numericLine, target);
+            emitNavigateSelection(numericLine, resolveCurrentTarget(), preferredToken);
           }, 240);
           return;
         }
         const raf = nativeRequestAnimationFrame || window.requestAnimationFrame;
         if (raf) {
           raf(function() {
-            emitNavigateSelection(numericLine, target);
+            emitNavigateSelection(numericLine, resolveCurrentTarget(), preferredToken);
           });
           return;
         }
-        emitNavigateSelection(numericLine, target);
+        emitNavigateSelection(numericLine, resolveCurrentTarget(), preferredToken);
       }
 
       function getRectArea(rect) {
@@ -86,49 +125,6 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         return width * height;
       }
 
-      function getNodeDepth(node) {
-        let depth = 0;
-        let current = node;
-        while (current && current.parentElement) {
-          depth += 1;
-          current = current.parentElement;
-        }
-        return depth;
-      }
-
-      function isSvgRootElement(node) {
-        if (!isSvgTargetElement(node)) return false;
-        const tag = String(node.tagName || "").toLowerCase();
-        return tag === "svg";
-      }
-
-      function findSvgDescendantTargetAtPoint(svgRoot, x, y) {
-        if (!svgRoot || !svgRoot.querySelectorAll) return null;
-        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-        const descendants = Array.from(svgRoot.querySelectorAll("[data-prism-line]"));
-        if (descendants.length === 0) return null;
-
-        let best = null;
-        for (const node of descendants) {
-          if (!isSvgTargetElement(node)) continue;
-          const tag = String(node.tagName || "").toLowerCase();
-          if (tag === "svg") continue;
-          const rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
-          const area = getRectArea(rect);
-          if (!rect || area <= 0) continue;
-          if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue;
-          const depth = getNodeDepth(node);
-          if (
-            !best ||
-            area < best.area ||
-            (area === best.area && depth > best.depth)
-          ) {
-            best = { node, area, depth };
-          }
-        }
-        return best ? best.node : null;
-      }
-
       function shouldSkipPickerElement(target) {
         if (!target || !target.getAttribute) return true;
         if (target.getAttribute("data-prism-picker-hover-proxy") === "true") return true;
@@ -137,53 +133,123 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         return false;
       }
 
-      function resolveLineCandidateTarget(sourceEl, x, y) {
-        const lineTarget = getLineTarget(sourceEl);
-        if (!lineTarget) return null;
-        if (isSvgRootElement(lineTarget)) {
-          const svgDescendant = findSvgDescendantTargetAtPoint(lineTarget, x, y);
-          if (svgDescendant) return svgDescendant;
-        }
+      function resolveDirectLineCandidate(sourceEl) {
+        if (!sourceEl) return null;
+        if (sourceEl === document.documentElement || sourceEl === document.body) return null;
+        if (shouldSkipPickerElement(sourceEl)) return null;
+        if (!getLineTarget(sourceEl)) return null;
         return sourceEl;
       }
 
-      function pickPrimaryLineCandidate(elements, x, y) {
-        if (!elements || elements.length === 0) return null;
-        for (let i = 0; i < elements.length; i += 1) {
-          const sourceEl = elements[i];
-          if (!sourceEl || shouldSkipPickerElement(sourceEl)) continue;
-          if (!getLineTarget(sourceEl)) continue;
-          const resolved = resolveLineCandidateTarget(sourceEl, x, y);
-          if (resolved) return resolved;
-        }
-        return null;
+      function collectDirectPickSampleOffsets() {
+        return [
+          { dx: 0, dy: 0 },
+          { dx: 2, dy: 0 },
+          { dx: -2, dy: 0 },
+          { dx: 0, dy: 2 },
+          { dx: 0, dy: -2 },
+          { dx: 2, dy: 2 },
+          { dx: -2, dy: -2 },
+          { dx: 2, dy: -2 },
+          { dx: -2, dy: 2 },
+          { dx: 4, dy: 0 },
+          { dx: -4, dy: 0 },
+          { dx: 0, dy: 4 },
+          { dx: 0, dy: -4 },
+          { dx: 4, dy: 4 },
+          { dx: -4, dy: -4 },
+          { dx: 4, dy: -4 },
+          { dx: -4, dy: 4 }
+        ];
       }
 
-      function pickSmallerInnerLineCandidate(elements, baseLineTarget, baseArea, x, y) {
-        if (!elements || elements.length === 0) return null;
-        if (!baseLineTarget) return null;
-        if (!Number.isFinite(baseArea) || baseArea <= 0) return null;
+      function getDistanceSq(x1, y1, x2, y2) {
+        const dx = (Number(x1) || 0) - (Number(x2) || 0);
+        const dy = (Number(y1) || 0) - (Number(y2) || 0);
+        return dx * dx + dy * dy;
+      }
 
-        let best = null;
-        for (let i = 0; i < elements.length; i += 1) {
-          const sourceEl = elements[i];
-          if (!sourceEl || shouldSkipPickerElement(sourceEl)) continue;
-          const lineTarget = getLineTarget(sourceEl);
-          if (!lineTarget || lineTarget === baseLineTarget) continue;
-          if (isBackgroundLikeTarget(lineTarget)) continue;
-          const resolved = resolveLineCandidateTarget(sourceEl, x, y);
-          if (!resolved || !resolved.getBoundingClientRect) continue;
-          const area = getRectArea(resolved.getBoundingClientRect());
-          if (area <= 0) continue;
-          if (area >= baseArea * 0.82) continue;
-          if (!best || area < best.area) {
-            best = {
-              target: resolved,
-              area
-            };
+      function resolveDirectPickTarget(x, y) {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+          return { target: null, branch: "direct-hit-invalid-point", samples: [] };
+        }
+
+        const samples = [];
+        const seen = new Set();
+
+        function addSample(sourceEl, sx, sy, sourceKind) {
+          const candidate = resolveDirectLineCandidate(sourceEl);
+          if (!candidate || seen.has(candidate)) return;
+          seen.add(candidate);
+          const rect = getOverlayRectForTarget(candidate);
+          const area = getRectArea(rect);
+          samples.push({
+            candidate,
+            area,
+            x: sx,
+            y: sy,
+            sourceKind
+          });
+        }
+
+        if (document.elementFromPoint) {
+          const direct = document.elementFromPoint(x, y);
+          addSample(direct, x, y, "elementFromPoint");
+        }
+
+        const offsets = collectDirectPickSampleOffsets();
+        for (let i = 0; i < offsets.length; i += 1) {
+          if (!document.elementFromPoint) break;
+          const sx = x + offsets[i].dx;
+          const sy = y + offsets[i].dy;
+          const sample = document.elementFromPoint(sx, sy);
+          addSample(sample, sx, sy, i === 0 ? "center-sample" : "micro-sample");
+        }
+
+        if (samples.length === 0 && document.elementsFromPoint) {
+          const stack = document.elementsFromPoint(x, y) || [];
+          for (let i = 0; i < stack.length; i += 1) {
+            addSample(stack[i], x, y, "elementsFromPoint");
           }
         }
-        return best ? best.target : null;
+
+        if (samples.length === 0) {
+          return { target: null, branch: "direct-hit-no-line-candidate", samples };
+        }
+
+        let bestNonZero = null;
+        for (let i = 0; i < samples.length; i += 1) {
+          const item = samples[i];
+          if (!(item.area > 0)) continue;
+          if (!bestNonZero) {
+            bestNonZero = item;
+            continue;
+          }
+          if (item.area < bestNonZero.area) {
+            bestNonZero = item;
+            continue;
+          }
+          if (
+            item.area === bestNonZero.area &&
+            getDistanceSq(item.x, item.y, x, y) < getDistanceSq(bestNonZero.x, bestNonZero.y, x, y)
+          ) {
+            bestNonZero = item;
+          }
+        }
+
+        if (bestNonZero) {
+          return {
+            target: bestNonZero.candidate,
+            branch: "direct-hit-smallest-nonzero",
+            samples
+          };
+        }
+
+        return {
+          target: samples[0].candidate,
+          branch: "direct-hit-first-candidate",
+          samples
+        };
       }
 
       function chooseVisualHoverTarget(target, lineTarget) {
@@ -252,11 +318,28 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         };
       }
 
+      function resolveHoverStateToken(hoverState) {
+        if (!hoverState) return "";
+        const tokenTarget = hoverState.lineTarget || hoverState.visualTarget || null;
+        if (!tokenTarget || typeof getTargetToken !== "function") return "";
+        return normalizeNavigateToken(getTargetToken(tokenTarget));
+      }
+
+      function getActiveEditingToken() {
+        const fromUiState = normalizeNavigateToken(prismEditingToken);
+        if (fromUiState) return fromUiState;
+        if (
+          Number.isFinite(prismEditingLine) &&
+          prismEditingLine > 0 &&
+          typeof getInstructionTokenForLine === "function"
+        ) {
+          return normalizeNavigateToken(getInstructionTokenForLine(prismEditingLine));
+        }
+        return "";
+      }
+
       function resolveOverlayBorderRadius(target) {
-        if (!target || !window.getComputedStyle) return "6px";
-        const radius = window.getComputedStyle(target).borderRadius;
-        if (!radius || radius === "0px") return "6px";
-        return radius;
+        return "0px";
       }
 
       function resolvePickerVisualState(target) {
@@ -270,12 +353,17 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
           prismEditingLine > 0 &&
           Number(hoverState.line) === Number(prismEditingLine)
         ) {
-          return {
-            mode: PICKER_VISUAL_MODE.SUPPRESSED,
-            line: hoverState.line || null,
-            hoverTarget: null,
-            focusTarget: null
-          };
+          const editingToken = getActiveEditingToken();
+          const hoverToken = resolveHoverStateToken(hoverState);
+          const shouldSuppress = editingToken ? hoverToken === editingToken : true;
+          if (shouldSuppress) {
+            return {
+              mode: PICKER_VISUAL_MODE.SUPPRESSED,
+              line: hoverState.line || null,
+              hoverTarget: null,
+              focusTarget: null
+            };
+          }
         }
         if (hoverState.instructionMarker) {
           return {
@@ -283,16 +371,6 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
             line: hoverState.line || null,
             hoverTarget: null,
             focusTarget: hoverState.instructionMarker
-          };
-        }
-        const isBackgroundTarget = isBackgroundLikeTarget(hoverState.visualTarget);
-        const useHoverProxy = shouldUsePickerHoverProxy(hoverState.visualTarget);
-        if (isBackgroundTarget && !hasInstructionForLine(hoverState.line) && !useHoverProxy) {
-          return {
-            mode: PICKER_VISUAL_MODE.SUPPRESSED,
-            line: hoverState.line || null,
-            hoverTarget: null,
-            focusTarget: null
           };
         }
         return {
@@ -391,6 +469,23 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         return getTargetLine(lineTarget || target) || 1;
       }
 
+      function resolvePickerClickToken(target, line) {
+        const lineTarget = getLineTarget(target) || target;
+        if (typeof getTargetToken === "function") {
+          const directToken = getTargetToken(lineTarget);
+          if (directToken) return directToken;
+        }
+        const numericLine = Number(line);
+        if (Number.isFinite(numericLine) && numericLine > 0) {
+          return normalizeNavigateToken(
+            typeof getInstructionTokenForLine === "function"
+              ? getInstructionTokenForLine(numericLine)
+              : ""
+          );
+        }
+        return "";
+      }
+
       function clearPickerHoverFeedback() {
         clearPickerVisualState();
       }
@@ -415,20 +510,37 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
       }
 
       function resolveProxyGeometryTarget(target) {
+        const lineRoot = getLineTarget(target);
         let current = target;
         while (current && current.getBoundingClientRect) {
-          const rect = current.getBoundingClientRect();
-          if (rect && (rect.width || rect.height)) {
+          const rect = getOverlayRectForTarget(current);
+          if (rect && getRectAreaSafe(rect) > 0) {
             return {
               target: current,
               rect
             };
+          }
+          if (lineRoot && current === lineRoot) {
+            break;
           }
           const next = current.parentElement;
           if (!next || next === document.body || next === document.documentElement) {
             break;
           }
           current = next;
+        }
+        if (
+          lineRoot &&
+          lineRoot !== target &&
+          lineRoot.getBoundingClientRect
+        ) {
+          const lineRect = getOverlayRectForTarget(lineRoot);
+          if (lineRect && getRectAreaSafe(lineRect) > 0) {
+            return {
+              target: lineRoot,
+              rect: lineRect
+            };
+          }
         }
         return {
           target,
@@ -502,10 +614,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         }
         prismPickerHoverTarget = markerTarget;
         prismPickerHoverTarget.classList.add("prism-picker-hover");
-        prismPickerHoverTarget.classList.toggle(
-          "prism-picker-hover--background",
-          isBackgroundLikeTarget(target)
-        );
+        prismPickerHoverTarget.classList.remove("prism-picker-hover--background");
       }
 
       function reconcilePickerHoverTarget(target) {
@@ -525,10 +634,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
           }
           syncPickerHoverProxy(target);
           prismPickerHoverProxy.classList.add("prism-picker-hover");
-          prismPickerHoverProxy.classList.toggle(
-            "prism-picker-hover--background",
-            isBackgroundLikeTarget(target)
-          );
+          prismPickerHoverProxy.classList.remove("prism-picker-hover--background");
           return;
         }
 
@@ -539,10 +645,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
           setPickerHoverTarget(target);
           return;
         }
-        prismPickerHoverTarget.classList.toggle(
-          "prism-picker-hover--background",
-          isBackgroundLikeTarget(target)
-        );
+        prismPickerHoverTarget.classList.remove("prism-picker-hover--background");
       }
 
       function invalidatePickerPointerState() {
@@ -590,19 +693,32 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         const cancel = nativeCancelAnimationFrame || window.cancelAnimationFrame;
         if (cancel) cancel(prismPickerTrackingRaf);
         prismPickerTrackingRaf = null;
+        prismPickerRefreshForce = false;
+      }
+
+      function requestPickerPointerRefresh(forceUpdate) {
+        if (!prismPickerActive) return;
+        if (forceUpdate) {
+          prismPickerRefreshForce = true;
+        }
+        if (prismPickerTrackingRaf !== null) return;
+        const raf = nativeRequestAnimationFrame || window.requestAnimationFrame;
+        if (!raf) {
+          const forced = Boolean(prismPickerRefreshForce);
+          prismPickerRefreshForce = false;
+          refreshPickerTargetFromPointer(forced);
+          return;
+        }
+        prismPickerTrackingRaf = raf(function() {
+          prismPickerTrackingRaf = null;
+          const forced = Boolean(prismPickerRefreshForce);
+          prismPickerRefreshForce = false;
+          refreshPickerTargetFromPointer(forced);
+        });
       }
 
       function startPickerTracking() {
-        if (prismPickerTrackingRaf !== null) return;
-        const raf = nativeRequestAnimationFrame || window.requestAnimationFrame;
-        if (!raf) return;
-        const tick = function() {
-          prismPickerTrackingRaf = null;
-          if (!prismPickerActive) return;
-          refreshPickerTargetFromPointer();
-          prismPickerTrackingRaf = raf(tick);
-        };
-        prismPickerTrackingRaf = raf(tick);
+        requestPickerPointerRefresh(true);
       }
 
       function ensurePickerHoverStyles() {
@@ -740,13 +856,22 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
           }
         }
 
+        if (prismPickerActive === nextActive) {
+          if (prismPickerActive) {
+            requestPickerPointerRefresh(true);
+          }
+          syncPreviewFocus();
+          updateInteractionLock();
+          refreshPickerDebugOverlay("picker-active-unchanged", prismPickerTarget);
+          return;
+        }
+
         prismPickerActive = nextActive;
         document.body.style.cursor = prismPickerActive ? "crosshair" : "";
         if (prismPickerActive) {
           ensurePickerPointerStyles();
           ensurePickerHoverStyles();
           startPickerTracking();
-          refreshPickerTargetFromPointer(true);
         } else {
           stopPickerTracking();
           invalidatePickerPointerState();
@@ -759,131 +884,154 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         refreshPickerDebugOverlay("picker-active-changed", prismPickerTarget);
       }
 
+      function normalizeInstructionMapValue(value) {
+        if (value && typeof value === "object") {
+          return {
+            memoText: String(value.memoText ?? value.text ?? ""),
+            token: normalizeNavigateToken(value.token)
+          };
+        }
+        return {
+          memoText: String(value || ""),
+          token: ""
+        };
+      }
+
+      function areInstructionMapsEqual(a, b) {
+        const left = a && typeof a === "object" ? a : {};
+        const right = b && typeof b === "object" ? b : {};
+        const leftKeys = Object.keys(left);
+        const rightKeys = Object.keys(right);
+        if (leftKeys.length !== rightKeys.length) return false;
+        for (let i = 0; i < leftKeys.length; i += 1) {
+          const key = leftKeys[i];
+          if (!Object.prototype.hasOwnProperty.call(right, key)) return false;
+          const leftValue = normalizeInstructionMapValue(left[key]);
+          const rightValue = normalizeInstructionMapValue(right[key]);
+          if (leftValue.memoText !== rightValue.memoText) return false;
+          if (leftValue.token !== rightValue.token) return false;
+        }
+        return true;
+      }
+
+      function areSettingsEqual(a, b) {
+        const left = a && typeof a === "object" ? a : {};
+        const right = b && typeof b === "object" ? b : {};
+        return JSON.stringify(left) === JSON.stringify(right);
+      }
+
       function applyUiState(nextState) {
         const safeState = nextState || {};
         const previewLine = Number(safeState.previewLine);
         const editingLine = Number(safeState.editingLine);
-        prismSettings = normalizeSettings(safeState.settings);
-        setPickerDebugOverlayEnabled(prismSettings.debugPickerOverlay);
-        applyVisualSettings();
-        prismViewMode = Boolean(safeState.isViewMode);
-        prismInstructions = safeState.instructions || {};
-        prismPreviewLine =
+        const editingToken = normalizeNavigateToken(safeState.editingToken);
+        const nextSettings = normalizeSettings(safeState.settings);
+        const nextViewMode = Boolean(safeState.isViewMode);
+        const nextInstructions =
+          safeState.instructions && typeof safeState.instructions === "object"
+            ? safeState.instructions
+            : {};
+        const nextPreviewLine =
           Number.isFinite(previewLine) && previewLine > 0
             ? previewLine
             : null;
-        prismEditingLine =
+        const nextEditingLine =
           Number.isFinite(editingLine) && editingLine > 0
             ? editingLine
             : null;
-        if (prismViewMode) {
-          prismPreviewLine = null;
-          prismEditingLine = null;
+        const resolvedPreviewLine = nextViewMode ? null : nextPreviewLine;
+        const resolvedEditingLine = nextViewMode ? null : nextEditingLine;
+        const resolvedEditingToken =
+          nextViewMode || !resolvedEditingLine
+            ? null
+            : editingToken || null;
+        const nextPickerActive = Boolean(safeState.pickerActive);
+        const nextFrozen = Boolean(safeState.frozen);
+
+        const settingsChanged = !areSettingsEqual(prismSettings, nextSettings);
+        const viewModeChanged = prismViewMode !== nextViewMode;
+        const instructionsChanged = !areInstructionMapsEqual(prismInstructions, nextInstructions);
+        const previewChanged = prismPreviewLine !== resolvedPreviewLine;
+        const editingChanged = prismEditingLine !== resolvedEditingLine;
+        const editingTokenChanged = prismEditingToken !== resolvedEditingToken;
+        const pickerChanged = prismPickerActive !== (nextPickerActive && !nextViewMode);
+        const frozenChanged = prismFrozen !== nextFrozen;
+
+        prismSettings = nextSettings;
+        setPickerDebugOverlayEnabled(prismSettings.debugPickerOverlay);
+        if (settingsChanged) {
+          applyVisualSettings();
         }
-        setPickerActive(Boolean(safeState.pickerActive));
-        setFrozen(Boolean(safeState.frozen));
-        queueRuntimeCapabilities();
+
+        prismViewMode = nextViewMode;
+        prismInstructions = nextInstructions;
+        prismPreviewLine = resolvedPreviewLine;
+        prismEditingLine = resolvedEditingLine;
+        prismEditingToken = resolvedEditingToken;
+
+        setPickerActive(nextPickerActive);
+
+        if (frozenChanged) {
+          setFrozen(nextFrozen);
+          refreshPickerDebugOverlay("ui-state-applied", prismPickerTarget);
+          return;
+        }
+
+        if (
+          settingsChanged ||
+          viewModeChanged ||
+          instructionsChanged ||
+          previewChanged ||
+          editingChanged ||
+          editingTokenChanged ||
+          pickerChanged
+        ) {
+          applyMarkers();
+          updateInteractionLock();
+          queueRuntimeCapabilities();
+        }
+
         refreshPickerDebugOverlay("ui-state-applied", prismPickerTarget);
       }
 
       function findTargetAt(x, y) {
-        const elements = document.elementsFromPoint(x, y);
-        if (!elements || elements.length === 0) {
+        const resolution = resolveDirectPickTarget(x, y);
+        const samples = resolution && Array.isArray(resolution.samples) ? resolution.samples : [];
+        const debugSamples = samples
+          .slice(0, 8)
+          .map(function(entry) {
+            if (!entry || !entry.candidate) return null;
+            const base = describeDebugElement(entry.candidate, true);
+            if (!base) return null;
+            base.sample = {
+              x: roundDebugNumber(entry.x, 1),
+              y: roundDebugNumber(entry.y, 1),
+              source: entry.sourceKind || ""
+            };
+            base.sampleArea = roundDebugNumber(entry.area, 1);
+            return base;
+          })
+          .filter(Boolean);
+
+        if (!resolution || !resolution.target) {
           setPickerTargetResolutionDebug({
             x: roundDebugNumber(x, 1),
             y: roundDebugNumber(y, 1),
-            branch: "empty-elements-from-point",
-            selected: null
+            branch: resolution && resolution.branch ? resolution.branch : "direct-hit-none",
+            selected: null,
+            topCandidates: debugSamples
           });
           return null;
-        }
-        const pickableElements = elements.filter(el => Boolean(el));
-        if (pickableElements.length === 0) {
-          setPickerTargetResolutionDebug({
-            x: roundDebugNumber(x, 1),
-            y: roundDebugNumber(y, 1),
-            branch: "empty-pickable-elements",
-            selected: null
-          });
-          return null;
-        }
-
-        const primaryTarget = pickPrimaryLineCandidate(pickableElements, x, y);
-        if (primaryTarget) {
-          const primaryLineTarget = getLineTarget(primaryTarget) || primaryTarget;
-          const primaryArea = primaryTarget.getBoundingClientRect
-            ? getRectArea(primaryTarget.getBoundingClientRect())
-            : 0;
-          const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
-          const shouldRefineForInnerTarget =
-            isBackgroundLikeTarget(primaryLineTarget) ||
-            primaryArea >= viewportArea * 0.18;
-
-          if (shouldRefineForInnerTarget) {
-            const refinedTarget = pickSmallerInnerLineCandidate(
-              pickableElements,
-              primaryLineTarget,
-              primaryArea,
-              x,
-              y
-            );
-            if (refinedTarget) {
-              setPickerTargetResolutionDebug({
-                x: roundDebugNumber(x, 1),
-                y: roundDebugNumber(y, 1),
-                branch: "refined-smaller-inner",
-                selected: describeDebugElement(refinedTarget, true),
-                primary: describeDebugElement(primaryTarget, true),
-                topCandidates: pickableElements
-                  .slice(0, 8)
-                  .map(function(el) { return describeDebugElement(el, true); })
-                  .filter(Boolean)
-              });
-              return refinedTarget;
-            }
-          }
-
-          setPickerTargetResolutionDebug({
-            x: roundDebugNumber(x, 1),
-            y: roundDebugNumber(y, 1),
-            branch: "primary-line-candidate",
-            selected: describeDebugElement(primaryTarget, true),
-            topCandidates: pickableElements
-              .slice(0, 8)
-              .map(function(el) { return describeDebugElement(el, true); })
-              .filter(Boolean)
-          });
-          return primaryTarget;
-        }
-
-        // Fallback to the first visible non-root element.
-        for (const el of pickableElements) {
-          if (el === document.documentElement || el === document.body) continue;
-          if (shouldSkipPickerElement(el)) continue;
-          setPickerTargetResolutionDebug({
-            x: roundDebugNumber(x, 1),
-            y: roundDebugNumber(y, 1),
-            branch: "fallback-first-visible",
-            selected: describeDebugElement(el, true),
-            topCandidates: pickableElements
-              .slice(0, 8)
-              .map(function(node) { return describeDebugElement(node, true); })
-              .filter(Boolean)
-          });
-          return el;
         }
 
         setPickerTargetResolutionDebug({
           x: roundDebugNumber(x, 1),
           y: roundDebugNumber(y, 1),
-          branch: "fallback-first-raw",
-          selected: describeDebugElement(pickableElements[0] || null, true),
-          topCandidates: pickableElements
-            .slice(0, 8)
-            .map(function(node) { return describeDebugElement(node, true); })
-            .filter(Boolean)
+          branch: resolution.branch || "direct-hit-selected",
+          selected: describeDebugElement(resolution.target, true),
+          topCandidates: debugSamples
         });
-        return pickableElements[0] || null;
+        return resolution.target;
       }
 
 
