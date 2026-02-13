@@ -1,26 +1,11 @@
 export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
       document.addEventListener("mousemove", function(event) {
         if (isDebugOverlayEventTarget(event.target)) return;
-        prismPointerInside = true;
-        prismPointerClientX = event.clientX;
-        prismPointerClientY = event.clientY;
-        if (!prismPickerActive) return;
         event.stopPropagation();
         event.stopImmediatePropagation();
-        if (typeof requestPickerPointerRefresh === "function") {
-          requestPickerPointerRefresh(false);
-        } else {
-          refreshPickerTargetFromPointer();
-        }
-      }, true);
-
-      document.addEventListener("mouseover", function(event) {
-        if (isDebugOverlayEventTarget(event.target)) return;
-        if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
         prismPointerInside = true;
         prismPointerClientX = event.clientX;
         prismPointerClientY = event.clientY;
-        if (!prismPickerActive) return;
         if (typeof requestPickerPointerRefresh === "function") {
           requestPickerPointerRefresh(false);
         } else {

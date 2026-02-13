@@ -459,10 +459,13 @@ function PrismApp() {
     activeInstructionLine,
     activeInstructionToken,
     canvasFrozen,
+    activeElementRect,
   } = interactionState;
 
   const viewerRef = useRef(null);
   const panelShellRef = useRef(null);
+  const altHoldPickerActiveRef = useRef(false);
+  const pickerWasActiveBeforeAltHoldRef = useRef(false);
   const viewerReadyRef = useRef(false);
   const pendingPayloadRef = useRef(null);
   const pendingUiStateRef = useRef(null);
@@ -1651,6 +1654,24 @@ function PrismApp() {
     });
   }, [showToast]);
 
+  useEffect(() => {
+    if (isEditorModeEnabled) return;
+    altHoldPickerActiveRef.current = false;
+    pickerWasActiveBeforeAltHoldRef.current = false;
+    if (pickerActive) {
+      dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
+    }
+    if (activeInstructionLine || activeInstructionToken || activeElementRect) {
+      dispatchInteraction({ type: "CLEAR_SELECTION" });
+    }
+  }, [
+    activeElementRect,
+    activeInstructionLine,
+    activeInstructionToken,
+    isEditorModeEnabled,
+    pickerActive,
+  ]);
+
   const handleFreezeToggle = useCallback(() => {
     if (isFreezeDisabled) {
       const reason = runtimeCapabilities?.reasons?.freeze;
@@ -1743,6 +1764,55 @@ function PrismApp() {
     handleToggleEditorMode,
     isWindowMode,
   ]);
+
+  useEffect(() => {
+    if (isWindowMode) return undefined;
+
+    const handleAltHoldKeyDown = (event) => {
+      if (event.key !== "Alt") return;
+      if (event.repeat) return;
+      if (!isEditorModeEnabled || isPickerDisabled) return;
+      if (altHoldPickerActiveRef.current) return;
+
+      altHoldPickerActiveRef.current = true;
+      pickerWasActiveBeforeAltHoldRef.current = pickerActive;
+
+      if (!pickerActive) {
+        dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: true });
+      }
+    };
+
+    const releaseAltHoldPicker = () => {
+      if (!altHoldPickerActiveRef.current) return;
+      const shouldRestoreInactive = !pickerWasActiveBeforeAltHoldRef.current;
+      altHoldPickerActiveRef.current = false;
+      pickerWasActiveBeforeAltHoldRef.current = false;
+      if (shouldRestoreInactive) {
+        dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
+      }
+    };
+
+    const handleAltHoldKeyUp = (event) => {
+      if (event.key !== "Alt") return;
+      releaseAltHoldPicker();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") releaseAltHoldPicker();
+    };
+
+    window.addEventListener("keydown", handleAltHoldKeyDown);
+    window.addEventListener("keyup", handleAltHoldKeyUp);
+    window.addEventListener("blur", releaseAltHoldPicker);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("keydown", handleAltHoldKeyDown);
+      window.removeEventListener("keyup", handleAltHoldKeyUp);
+      window.removeEventListener("blur", releaseAltHoldPicker);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [dispatchInteraction, isEditorModeEnabled, isPickerDisabled, isWindowMode, pickerActive]);
 
   const handleToggleSetting = useCallback((key) => {
     setUiSettings((prev) => ({
@@ -1892,4 +1962,3 @@ function PrismApp() {
 }
 
 export default PrismApp;
-
