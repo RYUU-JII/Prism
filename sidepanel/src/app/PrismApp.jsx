@@ -456,10 +456,14 @@ function PrismApp() {
     activeInstructionLine,
     activeInstructionToken,
     canvasFrozen,
+    activeElementRect,
   } = interactionState;
 
   const viewerRef = useRef(null);
   const panelShellRef = useRef(null);
+  const shiftHoldPickerActiveRef = useRef(false);
+  const pickerWasActiveBeforeShiftHoldRef = useRef(false);
+  const wasEditorModeEnabledRef = useRef(isEditorModeEnabled);
   const viewerReadyRef = useRef(false);
   const pendingPayloadRef = useRef(null);
   const pendingUiStateRef = useRef(null);
@@ -960,12 +964,14 @@ function PrismApp() {
   }, [isPickerDisabled, pickerActive]);
 
   useEffect(() => {
+    const wasEditorModeEnabled = wasEditorModeEnabledRef.current;
+    wasEditorModeEnabledRef.current = isEditorModeEnabled;
+    if (wasEditorModeEnabled === isEditorModeEnabled) return;
     if (!isEditorModeEnabled) return;
     if (isPickerDisabled) return;
-    if (!isHtmlPayload) return;
     if (pickerActive) return;
     dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: true });
-  }, [isHtmlPayload, isPickerDisabled, isEditorModeEnabled, pickerActive]);
+  }, [isEditorModeEnabled, isPickerDisabled, pickerActive]);
 
   useEffect(() => {
     if (isFreezeDisabled && canvasFrozen) {
@@ -1599,6 +1605,24 @@ function PrismApp() {
     });
   }, [showToast]);
 
+  useEffect(() => {
+    if (isEditorModeEnabled) return;
+    shiftHoldPickerActiveRef.current = false;
+    pickerWasActiveBeforeShiftHoldRef.current = false;
+    if (pickerActive) {
+      dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
+    }
+    if (activeInstructionLine || activeInstructionToken || activeElementRect) {
+      dispatchInteraction({ type: "CLEAR_SELECTION" });
+    }
+  }, [
+    activeElementRect,
+    activeInstructionLine,
+    activeInstructionToken,
+    isEditorModeEnabled,
+    pickerActive,
+  ]);
+
   const handleFreezeToggle = useCallback(() => {
     if (isFreezeDisabled) {
       const reason = runtimeCapabilities?.reasons?.freeze;
@@ -1707,6 +1731,74 @@ function PrismApp() {
     handleToggleEditorMode,
     isWindowMode,
   ]);
+
+  useEffect(() => {
+    if (isWindowMode) return undefined;
+
+    const handleShiftHoldKeyDown = (event) => {
+      if (event.key !== "Shift") return;
+      if (event.repeat) return;
+      if (event.altKey || event.metaKey || event.ctrlKey) return;
+      if (isPickerDisabled) return;
+      if (shiftHoldPickerActiveRef.current) return;
+
+      shiftHoldPickerActiveRef.current = true;
+      pickerWasActiveBeforeShiftHoldRef.current = pickerActive;
+
+      if (!pickerActive) {
+        dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: true });
+      }
+    };
+
+    const releaseShiftHoldPicker = () => {
+      if (!shiftHoldPickerActiveRef.current) return;
+      const shouldRestorePickerInactive = !pickerWasActiveBeforeShiftHoldRef.current;
+      shiftHoldPickerActiveRef.current = false;
+      pickerWasActiveBeforeShiftHoldRef.current = false;
+      if (shouldRestorePickerInactive) {
+        dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
+      }
+    };
+
+    const handleShiftHoldKeyUp = (event) => {
+      if (event.key !== "Shift") return;
+      releaseShiftHoldPicker();
+    };
+
+    const handleKeydownRecovery = (event) => {
+      if (!shiftHoldPickerActiveRef.current) return;
+      if (event.shiftKey) return;
+      releaseShiftHoldPicker();
+    };
+
+    const handlePointerRecovery = (event) => {
+      if (!shiftHoldPickerActiveRef.current) return;
+      if (event.shiftKey) return;
+      releaseShiftHoldPicker();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") releaseShiftHoldPicker();
+    };
+
+    window.addEventListener("keydown", handleShiftHoldKeyDown);
+    window.addEventListener("keyup", handleShiftHoldKeyUp);
+    window.addEventListener("keydown", handleKeydownRecovery, true);
+    window.addEventListener("pointerdown", handlePointerRecovery, true);
+    window.addEventListener("pointerup", handlePointerRecovery, true);
+    window.addEventListener("blur", releaseShiftHoldPicker);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("keydown", handleShiftHoldKeyDown);
+      window.removeEventListener("keyup", handleShiftHoldKeyUp);
+      window.removeEventListener("keydown", handleKeydownRecovery, true);
+      window.removeEventListener("pointerdown", handlePointerRecovery, true);
+      window.removeEventListener("pointerup", handlePointerRecovery, true);
+      window.removeEventListener("blur", releaseShiftHoldPicker);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [dispatchInteraction, isPickerDisabled, isWindowMode, pickerActive]);
 
   const handleToggleSetting = useCallback((key) => {
     setUiSettings((prev) => ({
@@ -1856,4 +1948,3 @@ function PrismApp() {
 }
 
 export default PrismApp;
-
