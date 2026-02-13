@@ -464,8 +464,6 @@ function PrismApp() {
 
   const viewerRef = useRef(null);
   const panelShellRef = useRef(null);
-  const altHoldPickerActiveRef = useRef(false);
-  const pickerWasActiveBeforeAltHoldRef = useRef(false);
   const viewerReadyRef = useRef(false);
   const pendingPayloadRef = useRef(null);
   const pendingUiStateRef = useRef(null);
@@ -957,6 +955,8 @@ function PrismApp() {
 
     const handlePeekModifierDown = (event) => {
       if (event.key !== "Shift") return;
+      if (event.repeat) return;
+      if (isEditableTarget(event.target)) return;
       if (isPickerDisabled) return;
       setAltPeekActive(true);
     };
@@ -964,29 +964,27 @@ function PrismApp() {
       if (event.key !== "Shift") return;
       setAltPeekActive(false);
     };
+    const clearPeekMode = () => {
+      setAltPeekActive(false);
+    };
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") {
-        setAltPeekActive(false);
+        clearPeekMode();
       }
     };
 
     window.addEventListener("keydown", handlePeekModifierDown, true);
     window.addEventListener("keyup", handlePeekModifierUp, true);
+    window.addEventListener("blur", clearPeekMode);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.removeEventListener("keydown", handlePeekModifierDown, true);
       window.removeEventListener("keyup", handlePeekModifierUp, true);
+      window.removeEventListener("blur", clearPeekMode);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [isPickerDisabled]);
-
-  useEffect(() => {
-    if (!isEditorModeEnabled) return;
-    if (isPickerDisabled) return;
-    if (pickerActive) return;
-    dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: true });
-  }, [isEditorModeEnabled, isPickerDisabled, pickerActive]);
 
   useEffect(() => {
     if (isFreezeDisabled && canvasFrozen) {
@@ -1643,28 +1641,19 @@ function PrismApp() {
   const handleToggleEditorMode = useCallback(() => {
     setIsEditorModeEnabled((prev) => {
       const next = !prev;
+      if (next) {
+        if (!isPickerDisabled) {
+          dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: true });
+        }
+      } else {
+        setAltPeekActive(false);
+        dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
+        dispatchInteraction({ type: "CLEAR_SELECTION" });
+      }
       showToast(next ? "편집 모드가 활성화되었습니다" : "편집 모드가 비활성화되었습니다");
       return next;
     });
-  }, [showToast]);
-
-  useEffect(() => {
-    if (isEditorModeEnabled) return;
-    altHoldPickerActiveRef.current = false;
-    pickerWasActiveBeforeAltHoldRef.current = false;
-    if (pickerActive) {
-      dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
-    }
-    if (activeInstructionLine || activeInstructionToken || activeElementRect) {
-      dispatchInteraction({ type: "CLEAR_SELECTION" });
-    }
-  }, [
-    activeElementRect,
-    activeInstructionLine,
-    activeInstructionToken,
-    isEditorModeEnabled,
-    pickerActive,
-  ]);
+  }, [isPickerDisabled, showToast]);
 
   const handleFreezeToggle = useCallback(() => {
     if (isFreezeDisabled) {
@@ -1758,56 +1747,6 @@ function PrismApp() {
     handleToggleEditorMode,
     isWindowMode,
   ]);
-
-  useEffect(() => {
-    if (isWindowMode) return undefined;
-
-    const handleShiftHoldKeyDown = (event) => {
-      if (event.key !== "Shift") return;
-      if (event.repeat) return;
-      if (isEditableTarget(event.target)) return;
-      if (!isEditorModeEnabled || isPickerDisabled) return;
-      if (altHoldPickerActiveRef.current) return;
-
-      altHoldPickerActiveRef.current = true;
-      pickerWasActiveBeforeAltHoldRef.current = pickerActive;
-
-      if (!pickerActive) {
-        dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: true });
-      }
-    };
-
-    const releaseShiftHoldPicker = () => {
-      if (!altHoldPickerActiveRef.current) return;
-      const shouldRestoreInactive = !pickerWasActiveBeforeAltHoldRef.current;
-      altHoldPickerActiveRef.current = false;
-      pickerWasActiveBeforeAltHoldRef.current = false;
-      if (shouldRestoreInactive) {
-        dispatchInteraction({ type: "SET_PICKER_ACTIVE", active: false });
-      }
-    };
-
-    const handleShiftHoldKeyUp = (event) => {
-      if (event.key !== "Shift") return;
-      releaseShiftHoldPicker();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") releaseShiftHoldPicker();
-    };
-
-    window.addEventListener("keydown", handleShiftHoldKeyDown);
-    window.addEventListener("keyup", handleShiftHoldKeyUp);
-    window.addEventListener("blur", releaseShiftHoldPicker);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener("keydown", handleShiftHoldKeyDown);
-      window.removeEventListener("keyup", handleShiftHoldKeyUp);
-      window.removeEventListener("blur", releaseShiftHoldPicker);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [dispatchInteraction, isEditorModeEnabled, isPickerDisabled, isWindowMode, pickerActive]);
 
   const handleToggleSetting = useCallback((key) => {
     setUiSettings((prev) => ({
