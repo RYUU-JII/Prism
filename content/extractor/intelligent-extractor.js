@@ -25,6 +25,11 @@
     "main",
   ];
 
+  const ASSISTANT_CONTAINER_CACHE_TTL_MS = 250;
+  let assistantContainerCacheAt = 0;
+  let assistantContainerCache = [];
+
+
   function cssEscape(value) {
     if (window.CSS && typeof window.CSS.escape === "function") {
       return window.CSS.escape(String(value));
@@ -482,6 +487,11 @@
   }
 
   function collectAssistantContainers() {
+    const now = Date.now();
+    if (assistantContainerCacheAt && now - assistantContainerCacheAt < ASSISTANT_CONTAINER_CACHE_TTL_MS) {
+      return assistantContainerCache;
+    }
+
     const roots = collectSearchRoots(document);
     const merged = [];
     const seen = new Set();
@@ -494,6 +504,9 @@
         merged.push(node);
       });
     });
+
+    assistantContainerCache = merged;
+    assistantContainerCacheAt = now;
     return merged;
   }
 
@@ -657,6 +670,8 @@
 
     function noteMutation() {
       lastMutationAt = Date.now();
+      assistantContainerCacheAt = 0;
+      assistantContainerCache = [];
     }
 
     function noteSubmitAttempt(payload = {}) {

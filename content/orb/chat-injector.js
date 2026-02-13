@@ -68,8 +68,7 @@
     }
 
     function findBestSendButtonCandidate() {
-      const learned = intelligentExtractor?.findBestSendButton?.();
-      if (learned) return learned;
+      const learned = intelligentExtractor?.findBestSendButton?.() || null;
 
       const host = window.location.host;
       if (host.includes("gemini.google.com")) {
@@ -86,6 +85,8 @@
         }
         return null;
       }
+
+      if (learned) return learned;
       if (host.includes("claude.ai")) {
         return document.querySelector('button[aria-label*="Send"], button[aria-label*="전송"]');
       }
