@@ -497,6 +497,31 @@
     return merged;
   }
 
+  function scoreAssistantContainer(node, index = 0) {
+    if (!node || !(node instanceof Element)) return -Infinity;
+    let score = 0;
+    if (isVisible(node)) score += 8;
+
+    const hint = getElementHintText(node);
+    if (/(assistant|model|response|reply|gemini|claude|chatgpt)/i.test(hint)) score += 10;
+    if (/(sidebar|drawer|history|menu|nav|탐색|메뉴|사이드바)/i.test(hint)) score -= 18;
+
+    const preCount = node.querySelectorAll("pre").length;
+    const codeCount = node.querySelectorAll("code").length;
+    if (preCount > 0) score += Math.min(18, preCount * 6);
+    if (codeCount > 0) score += Math.min(12, codeCount * 3);
+    if (node.querySelector("prism-patches, prism-patch")) score += 30;
+
+    const text = String(node.innerText || "").trim();
+    if (text.length > 40) score += 4;
+    if (/```|<\s*prism-patches?\b|<\/?(html|div|section|main|script|style)\b|import\s+.*\s+from|export\s+default|function\s+\w+|class\s+\w+/i.test(text)) {
+      score += 16;
+    }
+
+    score += Math.min(6, index / 60);
+    return score;
+  }
+
   function installNetworkProbe() {
     if (window.__prismNetworkProbeInstalled) return;
     window.__prismNetworkProbeInstalled = true;
@@ -684,8 +709,11 @@
 
     function extractPatchCandidateText() {
       const patchPattern = /<\s*prism-patch\b|<\s*prism-patches\b|&lt;\s*prism-patch\b|&lt;\s*prism-patches\b/i;
-      const nodes = collectAssistantContainers();
-      for (let i = nodes.length - 1; i >= 0; i -= 1) {
+      const nodes = collectAssistantContainers()
+        .map((node, index) => ({ node, score: scoreAssistantContainer(node, index) }))
+        .sort((a, b) => b.score - a.score)
+        .map((entry) => entry.node);
+      for (let i = 0; i < nodes.length; i += 1) {
         const node = nodes[i];
         const patchNode = node?.querySelector?.("prism-patches");
         if (patchNode?.outerHTML) return patchNode.outerHTML;
@@ -713,9 +741,11 @@
     }
 
     function extractAssistantTextCandidate() {
-      const nodes = collectAssistantContainers();
-      for (let i = nodes.length - 1; i >= 0; i -= 1) {
-        const text = nodes[i]?.innerText || "";
+      const nodes = collectAssistantContainers()
+        .map((node, index) => ({ node, score: scoreAssistantContainer(node, index) }))
+        .sort((a, b) => b.score - a.score);
+      for (let i = 0; i < nodes.length; i += 1) {
+        const text = nodes[i]?.node?.innerText || "";
         if (!text || text.trim().length < 8) continue;
         return text;
       }
