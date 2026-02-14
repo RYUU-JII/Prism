@@ -526,15 +526,33 @@ export const SNAPSHOT_RUNTIME_PRELUDE_SOURCE = `
         prismDebugOverlayBodyEl = null;
       }
 
+      function isEditableElementForFocusGuard(target) {
+        if (!target) return false;
+        if (target === document.body || target === document.documentElement) return false;
+        const tag = String(target.tagName || "").toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select") return true;
+        return Boolean(target.isContentEditable);
+      }
+
       function ensurePrismFrameFocus() {
+        try {
+          const parentDoc =
+            window.parent && window.parent !== window && window.parent.document
+              ? window.parent.document
+              : null;
+          if (parentDoc) {
+            const parentActive = parentDoc.activeElement;
+            if (isEditableElementForFocusGuard(parentActive)) {
+              return;
+            }
+          }
+        } catch (err) {}
+
         try {
           if (typeof document.hasFocus === "function" && document.hasFocus()) return;
           const activeEl = document.activeElement;
-          if (activeEl && activeEl !== document.body) {
-            const tag = String(activeEl.tagName || "").toLowerCase();
-            if (tag === "input" || tag === "textarea" || activeEl.isContentEditable) {
-              return;
-            }
+          if (isEditableElementForFocusGuard(activeEl)) {
+            return;
           }
           if (typeof window.focus === "function") {
             window.focus();

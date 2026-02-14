@@ -11,9 +11,11 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         if (typeof refreshPickerStatusHud === "function") {
           refreshPickerStatusHud("mousemove");
         }
-        if (!prismPickerActive) return;
-        event.stopPropagation();
-        event.stopImmediatePropagation();
+        if (!prismPickerActive && !prismShiftKeyDown) return;
+        if (prismPickerActive) {
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+        }
         if (typeof requestPickerPointerRefresh === "function") {
           requestPickerPointerRefresh(false);
         } else {
@@ -33,7 +35,7 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         if (typeof refreshPickerStatusHud === "function") {
           refreshPickerStatusHud("mouseover");
         }
-        if (!prismPickerActive) return;
+        if (!prismPickerActive && !prismShiftKeyDown) return;
         if (typeof requestPickerPointerRefresh === "function") {
           requestPickerPointerRefresh(false);
         } else {
@@ -49,13 +51,23 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
         if (typeof refreshPickerStatusHud === "function") {
           refreshPickerStatusHud("mouseout");
         }
-        if (!prismPickerActive) return;
+        if (!prismPickerActive && !prismShiftKeyDown) return;
         invalidatePickerPointerState();
       }, true);
 
       window.addEventListener("blur", function() {
+        const hadTriggerDown = prismShiftKeyDown;
+        prismShiftKeyDown = false;
         if (typeof refreshPickerStatusHud === "function") {
           refreshPickerStatusHud("blur");
+        }
+        if (!prismPickerActive && typeof invalidatePickerPointerState === "function") {
+          invalidatePickerPointerState();
+        }
+        if (hadTriggerDown) {
+          try {
+            parent.postMessage({ type: "PRISM_SHIFT_PEEK", active: false }, "*");
+          } catch (err) {}
         }
       });
 
@@ -129,7 +141,7 @@ export const SNAPSHOT_RUNTIME_EVENT_BINDINGS_SOURCE = `
 
 document.addEventListener("click", function (event) {
   if (isDebugOverlayEventTarget(event.target)) return;
-  const forcePickByShiftClick = isTriggerKeyDown(event);
+  const forcePickByShiftClick = isTriggerKeyDown(event) || prismShiftKeyDown;
 
   if (
     prismDebugOverlayEnabled &&

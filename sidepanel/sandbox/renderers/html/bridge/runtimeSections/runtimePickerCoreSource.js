@@ -458,6 +458,10 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
       }
 
       function resolvePickerClickTarget(clientX, clientY) {
+        const liveTarget = findTargetAt(clientX, clientY);
+        if (!prismPickerActive && prismShiftKeyDown && liveTarget) {
+          return liveTarget;
+        }
         if (
           prismPickerVisualState &&
           prismPickerVisualState.mode === PICKER_VISUAL_MODE.HOVER &&
@@ -469,7 +473,7 @@ export const SNAPSHOT_RUNTIME_PICKER_CORE_SOURCE = `
         if (prismPickerTarget && prismPickerTarget.isConnected) {
           return prismPickerTarget;
         }
-        return findTargetAt(clientX, clientY);
+        return liveTarget;
       }
 
       function resolvePickerClickLine(target) {

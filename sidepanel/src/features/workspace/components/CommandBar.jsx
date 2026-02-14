@@ -222,6 +222,9 @@ const CommandBar = ({
             }
             rows={1}
             value={text}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
             onChange={(event) => setText(event.target.value)}
             onInput={resizeInputToTwoLines}
             onKeyDown={handleKeyDown}
