@@ -116,6 +116,9 @@ export const SNAPSHOT_RUNTIME_CAPABILITIES_SOURCE = `
             typeof safe.debugPickerOverlay === "boolean"
               ? safe.debugPickerOverlay
               : false,
+          pickerTriggerKey: ["Shift", "Alt", "Control", "Grave"].includes(safe.pickerTriggerKey)
+            ? safe.pickerTriggerKey
+            : "Shift",
           captureRange,
           highlightStrength,
           highlightColor

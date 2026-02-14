@@ -27,6 +27,7 @@ const DEFAULT_UI_SETTINGS = {
   retryFullSyncOnReject: false,
   exportAction: "inject",
   startupMode: "view",
+  pickerTriggerKey: "Shift",
   corePolicyProfileVersion: CORE_POLICY_PROFILE_VERSION,
 };
 
@@ -143,6 +144,9 @@ function loadUiSettings() {
       retryFullSyncOnReject,
       adaptiveResponseRouting,
       aiResponseMode,
+      pickerTriggerKey: ["Shift", "Alt", "Control", "Grave"].includes(parsed?.pickerTriggerKey)
+        ? parsed.pickerTriggerKey
+        : DEFAULT_UI_SETTINGS.pickerTriggerKey,
       corePolicyProfileVersion: CORE_POLICY_PROFILE_VERSION,
     };
   } catch (err) {

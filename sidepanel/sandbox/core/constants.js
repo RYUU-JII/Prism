@@ -7,7 +7,8 @@ export const DEFAULT_UI_SETTINGS = Object.freeze({
   pickerHighlight: {
     strength: "medium",
     color: "#14b8a6"
-  }
+  },
+  pickerTriggerKey: "Shift"
 });
 
 export function normalizeUiSettings(settings) {
@@ -35,15 +36,18 @@ export function normalizeUiSettings(settings) {
         : DEFAULT_UI_SETTINGS.captureRange,
     memoResetPolicy:
       safe.memoResetPolicy === "on_code_change" ||
-      safe.memoResetPolicy === "on_copy" ||
-      safe.memoResetPolicy === "manual"
+        safe.memoResetPolicy === "on_copy" ||
+        safe.memoResetPolicy === "manual"
         ? safe.memoResetPolicy
         : DEFAULT_UI_SETTINGS.memoResetPolicy,
+    pickerTriggerKey: ["Shift", "Alt", "Control", "Grave"].includes(safe.pickerTriggerKey)
+      ? safe.pickerTriggerKey
+      : "Shift",
     pickerHighlight: {
       strength:
         pickerHighlightRaw.strength === "subtle" ||
-        pickerHighlightRaw.strength === "medium" ||
-        pickerHighlightRaw.strength === "strong"
+          pickerHighlightRaw.strength === "medium" ||
+          pickerHighlightRaw.strength === "strong"
           ? pickerHighlightRaw.strength
           : DEFAULT_UI_SETTINGS.pickerHighlight.strength,
       color:

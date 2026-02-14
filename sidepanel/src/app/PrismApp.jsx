@@ -441,6 +441,7 @@ function PrismApp() {
   const [isEditorModeEnabled, setIsEditorModeEnabled] = useState(
     () => (initialUiSettings?.startupMode || "view") === "edit"
   );
+  const [isViewModeEnabled, setIsViewModeEnabled] = useState(false);
   const [globalMemoText, setGlobalMemoText] = useState("");
   const [interactionState, dispatchInteraction] = useReducer(
     interactionReducer,
@@ -556,10 +557,10 @@ function PrismApp() {
     instructionCount === 0;
   const pickerEnabledForRuntime = Boolean(
     ENABLE_PICKER &&
-      !isPickerDisabled &&
-      (pickerActive || altPeekActive)
+    !isPickerDisabled &&
+    (pickerActive || altPeekActive || isEditorModeEnabled)
   );
-  const isRuntimeViewMode = !isEditorModeEnabled && !pickerEnabledForRuntime;
+  const isRuntimeViewMode = isViewModeEnabled;
   const { targetTabId, isWindowMode } = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return {
@@ -953,15 +954,21 @@ function PrismApp() {
   useEffect(() => {
     if (!ENABLE_PICKER) return undefined;
 
+    const keyMatchesTrigger = (event) => {
+      const trigger = uiSettings.pickerTriggerKey || "Shift";
+      if (trigger === "Grave") return event.key === "`";
+      return event.key === trigger;
+    };
+
     const handlePeekModifierDown = (event) => {
-      if (event.key !== "Shift") return;
+      if (!keyMatchesTrigger(event)) return;
       if (event.repeat) return;
       if (isEditableTarget(event.target)) return;
       if (isPickerDisabled) return;
       setAltPeekActive(true);
     };
     const handlePeekModifierUp = (event) => {
-      if (event.key !== "Shift") return;
+      if (!keyMatchesTrigger(event)) return;
       setAltPeekActive(false);
     };
     const clearPeekMode = () => {
@@ -1344,11 +1351,11 @@ function PrismApp() {
       selectedTargetFromOptions ||
       (
         Number.isFinite(selectedLine) &&
-        selectedLine > 0
+          selectedLine > 0
           ? {
-              line: selectedLine,
-              token: selectedInstructionToken || "",
-            }
+            line: selectedLine,
+            token: selectedInstructionToken || "",
+          }
           : null
       );
     const settingsSnapshot =
@@ -1793,6 +1800,14 @@ function PrismApp() {
           startupMode: nextMode,
         };
       }
+      if (key === "pickerTriggerKey") {
+        return {
+          ...prev,
+          pickerTriggerKey: ["Shift", "Alt", "Control", "Grave"].includes(value)
+            ? value
+            : DEFAULT_UI_SETTINGS.pickerTriggerKey,
+        };
+      }
       return {
         ...prev,
         [key]: value,
@@ -1845,6 +1860,8 @@ function PrismApp() {
               onThemeModeChange={handleThemeModeChange}
               isEditorModeEnabled={isEditorModeEnabled}
               onToggleEditorMode={handleToggleEditorMode}
+              isViewModeEnabled={isViewModeEnabled}
+              onToggleViewMode={() => setIsViewModeEnabled((prev) => !prev)}
               rightSlot={
                 <NotesIsland
                   instructionEntries={instructionEntries}
